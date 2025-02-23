@@ -1,5 +1,6 @@
-package com.payments.reconciler.equity.workpay;
+package com.payments.reconciler.repository;
 
+import com.payments.reconciler.entity.WorkPayEquityTransaction;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -9,5 +10,5 @@ import org.springframework.stereotype.Repository;
  * and query methods for interacting with the database.
  */
 @Repository
-public interface EquityTransactionRepository extends JpaRepository<WorkPayEquityTransaction, Long> {
+public interface WorkPayEquityTransactionRepository extends JpaRepository<WorkPayEquityTransaction, Long> {
 }

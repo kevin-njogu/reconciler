@@ -1,5 +1,6 @@
-package com.payments.reconciler.equity.bank;
+package com.payments.reconciler.repository;
 
+import com.payments.reconciler.entity.EquityTransaction;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

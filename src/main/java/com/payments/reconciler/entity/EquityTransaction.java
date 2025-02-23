@@ -1,4 +1,4 @@
-package com.payments.reconciler.equity.bank;
+package com.payments.reconciler.entity;
 
 import com.opencsv.bean.CsvBindByName;
 import com.opencsv.bean.CsvCustomBindByName;
