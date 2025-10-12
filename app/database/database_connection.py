@@ -1,10 +1,10 @@
 from contextlib import contextmanager
 
-from fastapi import Depends, HTTPException
-from typing import Annotated
-from sqlalchemy.orm import Session
-from .database_variables import session_local, Base, engine
+from .database_variables import DbConfigs
 
+Base = DbConfigs.Base
+session_local = DbConfigs.session_local
+engine = DbConfigs.engine
 
 @contextmanager
 def get_db_session():
