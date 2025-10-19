@@ -1,6 +1,6 @@
 from sqlalchemy import Integer, DateTime, String, Numeric, ForeignKey, func, UniqueConstraint
 from sqlalchemy.orm import mapped_column, Mapped, relationship
-from app.database.mysql import Base
+from app.database.mysql_configs import Base
 
 class EquityTransaction(Base):
     __abstract__ = True
@@ -34,46 +34,46 @@ class WorkpayEquityTransaction(Base):
 class EquityDebit(EquityTransaction):
     __tablename__ = "equity_debits"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="equity_debits")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="equity_debits")
     __table_args__ = (UniqueConstraint('narrative', 'session_id', name='uq_narrative_session'),)
 
 
 class EquityCredit(EquityTransaction):
     __tablename__ = "equity_credits"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="equity_credits")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="equity_credits")
     __table_args__ = (UniqueConstraint('narrative', 'session_id', name='uq_narrative_session'),)
 
 
 class EquityCharge(EquityTransaction):
     __tablename__ = "equity_charges"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="equity_charges")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="equity_charges")
     __table_args__ = (UniqueConstraint('narrative', 'session_id', name='uq_narrative_session'),)
 
 
 class WpEquityPayout(WorkpayEquityTransaction):
     __tablename__ = "wp_equity_payouts"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="wp_equity_payouts")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="wp_equity_payouts")
     __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
 
 
 class WpEquityRefund(WorkpayEquityTransaction):
     __tablename__ = "wp_equity_refunds"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="wp_equity_refunds")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="wp_equity_refunds")
     __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
 
 
 class TopUp(WorkpayEquityTransaction):
     __tablename__ = "top_ups"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="top_ups")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="top_ups")
     __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)

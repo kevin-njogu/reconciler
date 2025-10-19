@@ -1,4 +1,4 @@
-from app.database.redis import get_current_redis_session_id
+from app.database.redis_configs import get_current_redis_session_id
 from app.fileupload.services import get_uploads_dir
 
 XLSX_ENGINE = "openpyxl"
