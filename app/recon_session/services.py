@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException
-from app.session.entities import Session
-from app.database.redis import set_current_redis_session_id
+from app.recon_session.entities import ReconciliationSession
+from app.database.redis_configs import set_current_redis_session_id
 from app.fileupload.services import create_uploads_directory
 
 
-def create_session(db_session=None):
+def create_session(db_session):
     try:
-        new_session = Session()
+        new_session = ReconciliationSession()
         db_session.add(new_session)
         db_session.commit()
         db_session.refresh(new_session)

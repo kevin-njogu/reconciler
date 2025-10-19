@@ -1,14 +1,14 @@
+from argparse import FileType
 from pathlib import Path
 from fastapi import HTTPException, UploadFile
-from app.database.redis import get_current_redis_session_id
+from app.database.redis_configs import get_current_redis_session_id
+from app.exceptions.exceptions import FileTypeException, NullValueException
 
 
 async def process_upload_file(file: UploadFile):
     try:
-        if file.filename == "":
-            raise HTTPException(status_code=400, detail="No file provided")
         if not file.filename.endswith(("xls", "xlsx", "csv")):
-            raise HTTPException(status_code=400, detail="Unsupported file type")
+            raise FileTypeException("Failed to upload file: File type not supported")
         curr_session = get_current_redis_session_id()
         curr_session_dir = get_uploads_dir(curr_session)
         filepath = curr_session_dir / file.filename
@@ -31,7 +31,7 @@ async def write_file(filepath, file):
 def create_uploads_directory(session_id: str, dir_name: str) -> None:
     try:
         if not (session_id and dir_name):
-            raise HTTPException(status_code=400, detail='Bad request, session id and dir_name cannot be null')
+            raise NullValueException('Failed to create uploads directory: session id or dir name is null')
         uploads_dir = Path(dir_name)
         uploads_dir.mkdir(parents=True, exist_ok=True)
         session_dir = uploads_dir / session_id
@@ -43,8 +43,12 @@ def create_uploads_directory(session_id: str, dir_name: str) -> None:
 
 def get_uploads_dir(session_id):
     try:
+        if not session_id:
+            raise NullValueException("Failed to get uploads directory: session id is null")
         base_dir = Path(__file__).resolve().parent.parent.parent
         uploads_dir = base_dir / "uploads" / session_id
+        if not uploads_dir:
+            raise NullValueException("Failed to get uploads directory")
         return uploads_dir
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

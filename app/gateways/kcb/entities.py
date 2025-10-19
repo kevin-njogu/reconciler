@@ -1,6 +1,6 @@
 from sqlalchemy import Integer, DateTime, String, Numeric, ForeignKey, func, UniqueConstraint
 from sqlalchemy.orm import mapped_column, Mapped, relationship
-from app.database.mysql import Base
+from app.database.mysql_configs import Base
 
 class KcbTransaction(Base):
     __abstract__ = True
@@ -34,38 +34,38 @@ class WorkpayKcbTransaction(Base):
 class KcbDebit(KcbTransaction):
     __tablename__ = "kcb_debits"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="kcb_debits")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="kcb_debits")
     __table_args__ = (UniqueConstraint('details', 'session_id', name='uq_details_session'),)
 
 
 class KcbCredit(KcbTransaction):
     __tablename__ = "kcb_credits"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="kcb_credits")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="kcb_credits")
     __table_args__ = (UniqueConstraint('details', 'session_id', name='uq_details_session'),)
 
 
 class KcbCharge(KcbTransaction):
     __tablename__ = "kcb_charges"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="kcb_charges")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="kcb_charges")
     __table_args__ = (UniqueConstraint('details', 'session_id', name='uq_details_session'),)
 
 
 class WpKcbPayout(WorkpayKcbTransaction):
     __tablename__ = "wp_kcb_payouts"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="wp_kcb_payouts")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="wp_kcb_payouts")
     __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
 
 
 class WpKcbRefund(WorkpayKcbTransaction):
     __tablename__ = "wp_kcb_refunds"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="wp_kcb_refunds")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="wp_kcb_refunds")
     __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)

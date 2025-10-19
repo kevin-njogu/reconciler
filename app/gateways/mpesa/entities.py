@@ -1,6 +1,6 @@
 from sqlalchemy import Integer, DateTime, String, Numeric, ForeignKey, func, UniqueConstraint
 from sqlalchemy.orm import mapped_column, Mapped, relationship
-from app.database.mysql import Base
+from app.database.mysql_configs import Base
 
 class MpesaTransaction(Base):
     __abstract__ = True
@@ -35,40 +35,40 @@ class WorkpayMpesaTransaction(Base):
 class MpesaWithdrawn(MpesaTransaction):
     __tablename__ = "mpesa_withdrawn"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="mpesa_withdrawn")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="mpesa_withdrawn")
     __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
 
 
 class MpesaPaidIn(MpesaTransaction):
     __tablename__ = "mpesa_deposit"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="mpesa_paid_in")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="mpesa_paid_in")
     __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
 
 
 class MpesaCharge(MpesaTransaction):
     __tablename__ = "mpesa_charge"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="mpesa_charges")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="mpesa_charges")
     __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
 
 
 class WpMpesaPayout(WorkpayMpesaTransaction):
     __tablename__ = "wp_mpesa_payouts"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="wp_mpesa_payouts")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="wp_mpesa_payouts")
     __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
 
 
 class WpMpesaRefund(WorkpayMpesaTransaction):
     __tablename__ = "wp_mpesa_refunds"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("session.id"), nullable=False, index=True)
-    session: Mapped["Session"] = relationship("Session", back_populates="wp_mpesa_refunds")
+    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
+    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="wp_mpesa_refunds")
     __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
 
 
