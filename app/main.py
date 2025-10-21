@@ -9,9 +9,10 @@ from app.exceptions.handlers import main_exception_handler, global_exception_han
 
 from app.recon_session import controllers as session_controllers
 from app.fileupload import controllers as file_upload_controllers
-from app.gateways.equity import controllers as equity_controller
-from app.gateways.mpesa import controllers as mpesa_controllers
-from app.gateways.kcb import controllers as kcb_controllers
+# from app.gateways.equity import controllers as equity_controller
+# from app.gateways.mpesa import controllers as mpesa_controllers
+# from app.gateways.kcb import controllers as kcb_controllers
+from app.gateways import reconcile_controller
 
 
 logging.config.dictConfig(LOGGING)
@@ -21,9 +22,10 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Reconciler application")
 app.include_router(session_controllers.router)
 app.include_router(file_upload_controllers.router)
-app.include_router(equity_controller.router)
-app.include_router(mpesa_controllers.router)
-app.include_router(kcb_controllers.router)
+# app.include_router(equity_controller.router)
+# app.include_router(mpesa_controllers.router)
+# app.include_router(kcb_controllers.router)
+app.include_router(reconcile_controller.router)
 
 Base.metadata.create_all(engine)
 

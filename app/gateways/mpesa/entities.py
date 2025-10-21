@@ -7,10 +7,10 @@ class MpesaTransaction(Base):
 
     id = mapped_column(Integer, primary_key=True, index=True)
     date: Mapped[DateTime] = mapped_column(DateTime, nullable=True)
-    transaction_id: Mapped[String] = mapped_column(String(30), nullable=False)
     details: Mapped[String] = mapped_column(String(250), nullable=False)
-    withdrawn: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
-    paid_in: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
+    reference: Mapped[String] = mapped_column(String(250), nullable=False)
+    debits: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
+    credits: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
     status: Mapped[String] = mapped_column(String(15), nullable=False, default="UNRECONCILED")
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
@@ -37,7 +37,7 @@ class MpesaWithdrawn(MpesaTransaction):
 
     session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
     recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="mpesa_withdrawn")
-    __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
+    __table_args__ = (UniqueConstraint('reference', 'session_id', name='uq_tid_session'),)
 
 
 class MpesaPaidIn(MpesaTransaction):
@@ -45,7 +45,7 @@ class MpesaPaidIn(MpesaTransaction):
 
     session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
     recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="mpesa_paid_in")
-    __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
+    __table_args__ = (UniqueConstraint('reference', 'session_id', name='uq_tid_session'),)
 
 
 class MpesaCharge(MpesaTransaction):
@@ -53,7 +53,7 @@ class MpesaCharge(MpesaTransaction):
 
     session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
     recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="mpesa_charges")
-    __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
+    __table_args__ = (UniqueConstraint('reference', 'session_id', name='uq_tid_session'),)
 
 
 class WpMpesaPayout(WorkpayMpesaTransaction):

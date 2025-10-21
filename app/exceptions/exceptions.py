@@ -14,5 +14,11 @@ class FileTypeException(MainException):
 class EntityNotFoundException(MainException):
     pass
 
+class EmptyDataException(MainException):
+    pass
+
+class ServiceExecutionException(MainException):
+    pass
+
 class NullValueException(MainException):
     pass

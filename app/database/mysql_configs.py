@@ -19,7 +19,6 @@ database_name=os.getenv("DATABASE_NAME")
 
 #create engine
 database_url = f'mysql+pymysql://{database_username}:{database_password}@{database_host}:{database_port}/{database_name}'
-print(database_url)
 engine = create_engine(database_url)
 
 #create a recon_session

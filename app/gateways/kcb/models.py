@@ -6,8 +6,9 @@ from pydantic import BaseModel, Field
 class KcbTransactionBase(BaseModel):
     date: Optional[datetime]
     details: str = Field(max_length=250)
-    money_out: float = Field(default=0)
-    money_in: float = Field(default=0)
+    reference: str = Field(max_length=250)
+    debits: float = Field(default=0)
+    credits: float = Field(default=0)
     status: str = Field(default="UNRECONCILED", max_length=15)
 
 

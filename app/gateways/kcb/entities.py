@@ -8,11 +8,13 @@ class KcbTransaction(Base):
     id = mapped_column(Integer, primary_key=True, index=True)
     date: Mapped[DateTime] = mapped_column(DateTime, nullable=True)
     details: Mapped[String] = mapped_column(String(250), nullable=False)
-    money_out: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
-    money_in: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
+    reference: Mapped[String] = mapped_column(String(250), nullable=False)
+    debits: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
+    credits: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
     status: Mapped[String] = mapped_column(String(15), nullable=False, default="UNRECONCILED")
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+
 
 
 class WorkpayKcbTransaction(Base):

@@ -1,10 +1,8 @@
 import uuid
 from typing import List
-from app.gateways.equity.entities import *
-from app.gateways.kcb.entities import KcbCharge
-from app.gateways.kcb.entities import KcbCredit
-from app.gateways.kcb.entities import KcbDebit
-
+from app.database.mysql_configs import Base
+from sqlalchemy.orm import mapped_column, Mapped, relationship
+from sqlalchemy import Integer, DateTime, String, Numeric, ForeignKey, func, UniqueConstraint
 
 class ReconciliationSession(Base):
     __tablename__ = "recon_session"

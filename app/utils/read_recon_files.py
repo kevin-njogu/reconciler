@@ -8,6 +8,16 @@ def read_excel_files(file, sheet_name, engine, skip_rows=0):
     df = pd.read_excel(file, sheet_name=sheet_name, engine=engine, skiprows=skip_rows)
     return df
 
+def get_session():
+    session_id = get_current_redis_session_id()
+    return session_id
+SESSION = get_session()
+
+def get_directory():
+    directory = get_uploads_dir(SESSION)
+    return directory
+UPLOADS_DIR=get_directory()
+
 
 def read_file( filename_prefix, uploads_dir=UPLOADS_DIR, sheet_name=0, excel_skip_rows=0, csv_skip_rows=0):
     df = pd.DataFrame()

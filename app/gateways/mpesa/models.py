@@ -5,10 +5,10 @@ from pydantic import BaseModel, Field
 
 class MpesaTransactionBase(BaseModel):
     date: Optional[datetime]
-    transaction_id: str = Field(max_length=30)
     details: str = Field(max_length=250)
-    withdrawn: float = Field(default=0)
-    paid_in: float = Field(default=0)
+    reference: str = Field(max_length=250)
+    debits: float = Field(default=0)
+    credits: float = Field(default=0)
     status: str = Field(default="UNRECONCILED", max_length=15)
 
 
