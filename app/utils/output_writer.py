@@ -1,5 +1,4 @@
 from openpyxl.styles import Border, Side, Font, PatternFill, Alignment
-import openpyxl
 import pandas as pd
 
 

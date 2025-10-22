@@ -1,4 +1,3 @@
-from argparse import FileType
 from pathlib import Path
 from fastapi import HTTPException, UploadFile
 from app.database.redis_configs import get_current_redis_session_id
@@ -29,9 +28,9 @@ async def write_file(filepath, file):
 
 
 def create_uploads_directory(session_id: str, dir_name: str) -> None:
+    if not (session_id and dir_name):
+        raise NullValueException('Failed to create uploads directory: session id or dir name is null')
     try:
-        if not (session_id and dir_name):
-            raise NullValueException('Failed to create uploads directory: session id or dir name is null')
         uploads_dir = Path(dir_name)
         uploads_dir.mkdir(parents=True, exist_ok=True)
         session_dir = uploads_dir / session_id
@@ -42,9 +41,9 @@ def create_uploads_directory(session_id: str, dir_name: str) -> None:
 
 
 def get_uploads_dir(session_id):
+    if not session_id:
+        raise NullValueException("Failed to get uploads directory: session id is null")
     try:
-        if not session_id:
-            raise NullValueException("Failed to get uploads directory: session id is null")
         base_dir = Path(__file__).resolve().parent.parent.parent
         uploads_dir = base_dir / "uploads" / session_id
         if not uploads_dir:

@@ -38,7 +38,7 @@ class KcbDebit(KcbTransaction):
 
     session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
     recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="kcb_debits")
-    __table_args__ = (UniqueConstraint('details', 'session_id', name='uq_details_session'),)
+    __table_args__ = (UniqueConstraint('details', 'session_id', 'id', name='uq_details_session'),)
 
 
 class KcbCredit(KcbTransaction):
@@ -46,7 +46,7 @@ class KcbCredit(KcbTransaction):
 
     session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
     recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="kcb_credits")
-    __table_args__ = (UniqueConstraint('details', 'session_id', name='uq_details_session'),)
+    __table_args__ = (UniqueConstraint('details', 'session_id', 'id',  name='uq_details_session'),)
 
 
 class KcbCharge(KcbTransaction):
@@ -54,7 +54,7 @@ class KcbCharge(KcbTransaction):
 
     session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
     recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="kcb_charges")
-    __table_args__ = (UniqueConstraint('details', 'session_id', name='uq_details_session'),)
+    __table_args__ = (UniqueConstraint('details', 'session_id', 'id', name='uq_details_session'),)
 
 
 class WpKcbPayout(WorkpayKcbTransaction):
@@ -62,7 +62,7 @@ class WpKcbPayout(WorkpayKcbTransaction):
 
     session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
     recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="wp_kcb_payouts")
-    __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
+    __table_args__ = (UniqueConstraint('transaction_id', 'session_id','id', name='uq_tid_session'),)
 
 
 class WpKcbRefund(WorkpayKcbTransaction):
@@ -70,4 +70,4 @@ class WpKcbRefund(WorkpayKcbTransaction):
 
     session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
     recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="wp_kcb_refunds")
-    __table_args__ = (UniqueConstraint('transaction_id', 'session_id', name='uq_tid_session'),)
+    __table_args__ = (UniqueConstraint('transaction_id', 'session_id', 'id',  name='uq_tid_session'),)

@@ -1,6 +1,3 @@
-from app.database.redis_configs import get_current_redis_session_id
-from app.fileupload.services import get_uploads_dir
-
 XLSX_ENGINE = "openpyxl"
 XLS_ENGINE = "xlrd"
 XLSX_EXTENSION = ".xlsx"
@@ -8,7 +5,6 @@ XLS_EXTENSION = ".xls"
 CSV_EXTENSION = ".csv"
 UNRECONCILED = "unreconciled"
 RECONCILED = "reconciled"
-
 
 WP_COLS = {'date': 'DATE', 'tid': 'Transaction ID', 'ref': 'API Reference', 'method':'PAYMENT METHOD',
                   'account':'ACCOUNT NO./MOBILE', 'curr':'CURRENCY', 'amount': 'AMOUNT', 'sender_fee':'SENDER FEE',

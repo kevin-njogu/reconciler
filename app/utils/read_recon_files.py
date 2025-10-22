@@ -1,25 +1,22 @@
 import pandas as pd
 from fastapi import HTTPException
+from app.database.redis_configs import get_current_redis_session_id
+from app.fileupload.services import get_uploads_dir
 from app.utils.constants import *
-
 
 
 def read_excel_files(file, sheet_name, engine, skip_rows=0):
     df = pd.read_excel(file, sheet_name=sheet_name, engine=engine, skiprows=skip_rows)
     return df
 
-def get_session():
-    session_id = get_current_redis_session_id()
-    return session_id
-SESSION = get_session()
 
-def get_directory():
-    directory = get_uploads_dir(SESSION)
-    return directory
-UPLOADS_DIR=get_directory()
-
-
-def read_file( filename_prefix, uploads_dir=UPLOADS_DIR, sheet_name=0, excel_skip_rows=0, csv_skip_rows=0):
+def read_file( filename_prefix, sheet_name=0, excel_skip_rows=0, csv_skip_rows=0):
+    recon_session = get_current_redis_session_id()
+    if not recon_session:
+        raise HTTPException(status_code=400, detail='Failed to read file. Recon session is null')
+    uploads_dir = get_uploads_dir(recon_session)
+    if not uploads_dir:
+        raise HTTPException(status_code=400, detail='Failed to read file. Uploads directory is null')
     df = pd.DataFrame()
     try:
         if not uploads_dir:
@@ -41,10 +38,8 @@ def read_file( filename_prefix, uploads_dir=UPLOADS_DIR, sheet_name=0, excel_ski
                 else:
                     raise HTTPException(status_code=400, detail="Read file error: File type not supported")
                 break
-
         if not file_found:
             raise HTTPException(status_code=400, detail="Please upload the necessary files")
-
         return df
     except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to read file: str(e)")

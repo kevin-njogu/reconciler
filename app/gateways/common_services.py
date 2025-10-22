@@ -243,7 +243,7 @@ class CommonServices:
     def map_kcb(self):
         (kcb_debits, kcb_credits, kcb_charges,
          wp_payouts, wp_refunds) = self.load_all(KcbDebit, KcbCredit, KcbCharge,
-                                                 WpEquityPayout, WpEquityRefund)
+                                                 WpKcbPayout, WpKcbRefund)
 
         kcb_debits_schema = self.map_to_schema(kcb_debits, KcbTransactionBase)
         kcb_credits_schema = self.map_to_schema(kcb_credits, KcbTransactionBase)
@@ -289,21 +289,4 @@ class CommonServices:
 # session = get_current_redis_session_id()
 # service = CommonServices("mpesa", db, session)
 # response = service.download_report()
-
-# utility_reconciler = GatewayCleaner(FILE_CONFIGS_UTILITY, MPESA_COLUMNS)
-# util_debits = utility_reconciler.get_debits()
-# mmf_reconciler = GatewayCleaner(FILE_CONFIGS_MMF, MPESA_COLUMNS)
-# mmf_debits = mmf_reconciler.get_debits()
-# df_wp_mpesa = Workpay(FILE_CONFIGS_WORKPAY_MPESA, WP_COLS)
-# wp_debits = df_wp_mpesa.get_payouts()
-#
-# eq_reconciler = EquityCleaner(FILE_CONFIGS_EQUITY, EQUITY_COLUMNS)
-# eq_debits = eq_reconciler.get_debits()
-# wp_equity = WorkpayReconciler(FILE_CONFIGS_WORKPAY_EQUITY, WP_COLS)
-# wp_eq_debits = wp_equity.get_payouts()
-#
-# services = CommonServices("equity", db, session)
-#
-# gateway_df, internal_df = services.reconcile(wp_eq_debits, eq_debits)
-# print(gateway_df)
 
