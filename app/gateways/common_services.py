@@ -191,18 +191,110 @@ class CommonServices:
         except Exception as e:
             raise ServiceExecutionException(message=f"Failed to save reconciled items {e}")
 
+
+    def map_to_schema(self, records, schema):
+        return [schema.model_validate(record, from_attributes=True) for record in records]
+
+
+    def schema_to_dataframe(self, schema_records):
+        return pd.DataFrame([r.model_dump() for r in schema_records])
+
+
+    def load_all(self, *models,):
+        results = []
+        for model in models:
+            stmt = select(model).where(model.session_id == self.recon_session)
+            records = self.db_session.execute(stmt).scalars().all()
+            results.append(records)
+        return results
+
+
+    def map_mpesa(self):
+        (mpesa_debits, mpesa_credits, mpesa_charges,
+         wp_payouts, wp_refunds) = self.load_all(MpesaWithdrawn, MpesaPaidIn, MpesaCharge,
+                                                 WpMpesaPayout, WpMpesaRefund)
+
+        mpesa_debits_schema = self.map_to_schema(mpesa_debits, MpesaTransactionBase)
+        mpesa_credits_schema = self.map_to_schema(mpesa_credits, MpesaTransactionBase)
+        mpesa_charges_schema = self.map_to_schema(mpesa_charges, MpesaTransactionBase)
+        wp_payouts_schema = self.map_to_schema(wp_payouts, WorkpayMpesaTransactionBase)
+        wp_refunds_schema = self.map_to_schema(wp_refunds, WorkpayMpesaTransactionBase)
+        schemas = {"mpesa_debits": mpesa_debits_schema, "mpesa_credits": mpesa_credits_schema,
+                   "mpesa_charges": mpesa_charges_schema, "wp_payouts": wp_payouts_schema, "wp_refunds": wp_refunds_schema}
+        return schemas
+
+
+    def map_equity(self):
+        (equity_debits, equity_credits, equity_charges,
+         wp_payouts, wp_refunds, topups) = self.load_all(EquityDebit, EquityCredit, EquityCharge,
+                                                 WpEquityPayout, WpEquityRefund,TopUp)
+
+        equity_debits_schema = self.map_to_schema(equity_debits, EquityTransactionBase)
+        equity_credits_schema = self.map_to_schema(equity_credits, EquityTransactionBase)
+        equity_charges_schema = self.map_to_schema(equity_charges, EquityTransactionBase)
+        wp_payouts_schema = self.map_to_schema(wp_payouts, WorkpayEquityTransactionBase)
+        wp_refunds_schema = self.map_to_schema(wp_refunds, WorkpayEquityTransactionBase)
+        topups_schema = self.map_to_schema(topups, WorkpayEquityTransactionBase)
+        schemas = {"equity_debits": equity_debits_schema, "equity_credits": equity_credits_schema,
+                   "equity_charges": equity_charges_schema, "wp_payouts": wp_payouts_schema, "wp_refunds": wp_refunds_schema,
+                   "top_ups": topups_schema}
+        return schemas
+
+    def map_kcb(self):
+        (kcb_debits, kcb_credits, kcb_charges,
+         wp_payouts, wp_refunds) = self.load_all(KcbDebit, KcbCredit, KcbCharge,
+                                                 WpEquityPayout, WpEquityRefund)
+
+        kcb_debits_schema = self.map_to_schema(kcb_debits, KcbTransactionBase)
+        kcb_credits_schema = self.map_to_schema(kcb_credits, KcbTransactionBase)
+        kcb_charges_schema = self.map_to_schema(kcb_charges, KcbTransactionBase)
+        wp_payouts_schema = self.map_to_schema(wp_payouts, WorkpayKcbTransactionBase)
+        wp_refunds_schema = self.map_to_schema(wp_refunds, WorkpayKcbTransactionBase)
+        schemas = {"kcb_debits": kcb_debits_schema, "kcb_credits": kcb_credits_schema,
+                   "kcb_charges": kcb_charges_schema, "wp_payouts": wp_payouts_schema, "wp_refunds": wp_refunds_schema}
+        return schemas
+
+
+
+    def download_report(self):
+        schemas = {}
+        try:
+            if self.gateway == "equity":
+                schemas = self.map_equity()
+            elif self.gateway == "mpesa":
+                schemas = self.map_mpesa()
+            elif self.gateway == "kcb":
+                schemas = self.map_kcb()
+
+            dataframes = {name: self.schema_to_dataframe(records) for name, records in schemas.items()}
+
+            output = BytesIO()
+            write_to_excel(output, dataframes)
+            output.seek(0)
+
+            filename = f"{self.gateway.capitalize()}_{self.recon_session}_report.xlsx"
+            headers = {
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+            return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                     headers=headers)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+
+
 # from app.database.mysql_configs import Session, get_database
 # from app.database.redis_configs import get_current_redis_session_id
 # db = next(get_database())
 # session = get_current_redis_session_id()
-# service = CommonServices("equity", db, session)
-# response = service.save_reconciled()
+# service = CommonServices("mpesa", db, session)
+# response = service.download_report()
 
 # utility_reconciler = GatewayCleaner(FILE_CONFIGS_UTILITY, MPESA_COLUMNS)
 # util_debits = utility_reconciler.get_debits()
 # mmf_reconciler = GatewayCleaner(FILE_CONFIGS_MMF, MPESA_COLUMNS)
 # mmf_debits = mmf_reconciler.get_debits()
-# df_wp_mpesa = WorkpayReconciler(FILE_CONFIGS_WORKPAY_MPESA, WP_COLS)
+# df_wp_mpesa = Workpay(FILE_CONFIGS_WORKPAY_MPESA, WP_COLS)
 # wp_debits = df_wp_mpesa.get_payouts()
 #
 # eq_reconciler = EquityCleaner(FILE_CONFIGS_EQUITY, EQUITY_COLUMNS)
@@ -210,56 +302,8 @@ class CommonServices:
 # wp_equity = WorkpayReconciler(FILE_CONFIGS_WORKPAY_EQUITY, WP_COLS)
 # wp_eq_debits = wp_equity.get_payouts()
 #
-# services = CommonServices()
+# services = CommonServices("equity", db, session)
 #
 # gateway_df, internal_df = services.reconcile(wp_eq_debits, eq_debits)
 # print(gateway_df)
-
-
-    # def map_to_schema(records, schema):
-    #     return [schema.model_validate(record, from_attributes=True) for record in records]
-    #
-    #
-    # def schema_to_dataframe(schema_records):
-    #     return pd.DataFrame([r.model_dump() for r in schema_records])
-    #
-    #
-    # def load_all(db, *models, session_id: str):
-    #     results = []
-    #     for model in models:
-    #         stmt = select(model).where(model.session_id == session_id)
-    #         records = db.execute(stmt).scalars().all()
-    #         results.append(records)
-    #     return results
-    #
-    #
-    # def download_report(db_session, session_id):
-    #     try:
-    #         (mpesa_debits, mpesa_credits, mpesa_charges,
-    #          wp_payouts, wp_refunds) = load_all(db_session,MpesaWithdrawn, MpesaPaidIn, MpesaCharge,
-    #                                                      WpMpesaPayout, WpMpesaRefund, session_id=session_id)
-    #
-    #         mpesa_debits_schema = map_to_schema(mpesa_debits, MpesaTransactionBase)
-    #         mpesa_credits_schema = map_to_schema(mpesa_credits, MpesaTransactionBase)
-    #         mpesa_charges_schema = map_to_schema(mpesa_charges, MpesaTransactionBase)
-    #         wp_payouts_schema = map_to_schema(wp_payouts, WorkpayMpesaTransactionBase)
-    #         wp_refunds_schema = map_to_schema(wp_refunds, WorkpayMpesaTransactionBase)
-    #
-    #         schemas = {"mpesa_debits": mpesa_debits_schema, "mpesa_credits": mpesa_credits_schema, "mpesa_charges": mpesa_charges_schema,
-    #                    "mpesa_payouts": wp_payouts_schema, "mpesa_refunds": wp_refunds_schema}
-    #         dataframes = {name: schema_to_dataframe(records) for name, records in schemas.items()}
-    #
-    #         output = BytesIO()
-    #         write_to_excel(output, dataframes)
-    #         output.seek(0)
-    #
-    #         filename = f"Mpesa_{session_id}_report.xlsx"
-    #         headers = {
-    #             "Content-Disposition": f"attachment; filename={filename}"
-    #         }
-    #         return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    #                                  headers=headers)
-    #     except Exception as e:
-    #         raise HTTPException(status_code=400, detail=str(e))
-
 

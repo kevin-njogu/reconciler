@@ -38,7 +38,7 @@ class EquityDebit(EquityTransaction):
 
     session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
     recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="equity_debits")
-    __table_args__ = (UniqueConstraint('details', 'session_id', name='uq_details_session'),)
+    __table_args__ = (UniqueConstraint('details', 'session_id', "id", name='uq_details_session'),)
 
 
 class EquityCredit(EquityTransaction):
@@ -46,7 +46,7 @@ class EquityCredit(EquityTransaction):
 
     session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
     recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="equity_credits")
-    __table_args__ = (UniqueConstraint('details', 'session_id', name='uq_details_session'),)
+    __table_args__ = (UniqueConstraint('details', 'session_id', 'id', name='uq_details_session'),)
 
 
 class EquityCharge(EquityTransaction):
@@ -54,7 +54,7 @@ class EquityCharge(EquityTransaction):
 
     session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
     recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="equity_charges")
-    __table_args__ = (UniqueConstraint('details', 'session_id', name='uq_details_session'),)
+    __table_args__ = (UniqueConstraint('details', 'session_id','id', name='uq_details_session'),)
 
 
 class WpEquityPayout(WorkpayEquityTransaction):

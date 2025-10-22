@@ -12,7 +12,7 @@ from app.fileupload import controllers as file_upload_controllers
 # from app.gateways.equity import controllers as equity_controller
 # from app.gateways.mpesa import controllers as mpesa_controllers
 # from app.gateways.kcb import controllers as kcb_controllers
-from app.gateways import reconcile_controller
+from app.gateways import reconcile_controller, reports_controller
 
 
 logging.config.dictConfig(LOGGING)
@@ -26,6 +26,7 @@ app.include_router(file_upload_controllers.router)
 # app.include_router(mpesa_controllers.router)
 # app.include_router(kcb_controllers.router)
 app.include_router(reconcile_controller.router)
+app.include_router(reports_controller.router)
 
 Base.metadata.create_all(engine)
 

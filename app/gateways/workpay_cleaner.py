@@ -29,7 +29,7 @@ class WorkpayCleaner:
 
     def __handle_dates(self, df: pd.DataFrame, date_col: str) -> pd.DataFrame:
         dataframe = df.copy()
-        dataframe.loc[:, date_col] = (dataframe[date_col].astype(str).str.split(" ").str[0])
+        # dataframe.loc[:, date_col] = (dataframe[date_col].astype(str).str.split(" ").str[0])
         dataframe.loc[:, date_col] = (dataframe[date_col].apply(pd.to_datetime, errors="coerce"))
         return dataframe
 

@@ -2,13 +2,15 @@ from fastapi import Request
 from fastapi.responses import  JSONResponse
 from .exceptions import MainException
 
-def main_exception_handler(request:Request, exc:MainException):
+def main_exception_handler(request: Request, exc: MainException):
     return JSONResponse(
-        content = {"message": f'{exc.message}'}
+        status_code=exc.status_code,
+        content={"error": exc.__class__.__name__, "message": exc.message}
     )
 
 
-def global_exception_handler(request:Request, exc:Exception):
+def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
-        content = {"message": f'Internal error: {exc.__str__()}'}
+        status_code=500,
+        content={"error": "InternalServerError", "message": str(exc)}
     )
