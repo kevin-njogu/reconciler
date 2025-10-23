@@ -287,6 +287,6 @@ class CommonServices:
 # from app.database.redis_configs import get_current_redis_session_id
 # db = next(get_database())
 # session = get_current_redis_session_id()
-# service = CommonServices("mpesa", db, session)
-# response = service.download_report()
+# service = CommonServices("equity", db, session)
+# response = service.save_reconciled()
 

@@ -83,7 +83,7 @@ class GatewayCleaner:
         self.df = read_file(filename_prefix=self.configs.get("prefix"), sheet_name=self.configs.get("sheet_name"),
                                     excel_skip_rows=self.configs.get("excel_rows"), csv_skip_rows=self.configs.get("csv_rows"))
         if self.df.empty:
-            raise EmptyDataException(message=f"Failed to get data for {self.configs.get("name")} gateway")
+            raise EmptyDataException(message=f"Failed to get data for {self.configs.get('name')} gateway")
         return self.df
 
 
@@ -121,7 +121,7 @@ class GatewayCleaner:
         final_dataframe[new_df_cols] = dataframe[old_df_cols]
         final_dataframe[STATUS_COL] = UNRECONCILED
         if final_dataframe.empty:
-            raise EmptyDataException(message=f"Failed to clean data for {self.configs.get("name")} gateway")
+            raise EmptyDataException(message=f"Failed to clean data for {self.configs.get('name')} gateway")
         self.df = final_dataframe
         return final_dataframe
 
