@@ -1,74 +1,62 @@
-from sqlalchemy import Integer, DateTime, String, Numeric, ForeignKey, func, UniqueConstraint
-from sqlalchemy.orm import mapped_column, Mapped, relationship
+from sqlalchemy import Integer, DateTime, String, UniqueConstraint, Column, Float
 from app.database.mysql_configs import Base
 
 class MpesaTransaction(Base):
     __abstract__ = True
 
-    id = mapped_column(Integer, primary_key=True, index=True)
-    date: Mapped[DateTime] = mapped_column(DateTime, nullable=True)
-    details: Mapped[String] = mapped_column(String(250), nullable=False)
-    reference: Mapped[String] = mapped_column(String(250), nullable=False)
-    debits: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
-    credits: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
-    status: Mapped[String] = mapped_column(String(15), nullable=False, default="UNRECONCILED")
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(DateTime, nullable=False)
+    details = Column(String(255), nullable=True)
+    reference = Column(String(100), index=True, nullable=True)
+    debits = Column(Float, nullable=True)
+    credits = Column(Float, nullable=True)
+    remarks = Column(String(100), nullable=True)
+    session = Column(String(100), index=True, nullable=False)
+
+    def __repr__(self):
+        return f"<MpesaTransaction(id={self.id}, reference='{self.reference}', date={self.date})>"
 
 
 class WorkpayMpesaTransaction(Base):
     __abstract__ = True
 
-    id = mapped_column(Integer, primary_key=True, index=True)
-    date: Mapped[DateTime] = mapped_column(DateTime, nullable=True)
-    transaction_id: Mapped[String] = mapped_column(String(100), nullable=False)
-    api_reference: Mapped[String] = mapped_column(String(100), nullable=True)
-    recipient: Mapped[String] = mapped_column(String(200), nullable=True)
-    amount: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
-    sender_fee: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
-    recipient_fee: Mapped[Numeric] = mapped_column(Numeric(12,2), nullable=True, default=0)
-    status: Mapped[String] = mapped_column(String(15), nullable=False, default="UNRECONCILED")
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(DateTime, nullable=False)
+    transaction_id = Column(String(100), index=True, nullable=True)
+    api_reference = Column(String(100), index=True, nullable=True)
+    recipient = Column(String(255), nullable=True)
+    amount = Column(Float, nullable=True)
+    sender_fee = Column(Float, nullable=True)
+    recipient_fee = Column(Float, nullable=True)
+    processing_status = Column(String(50), nullable=True)
+    remarks = Column(String(255), nullable=True)
+    session = Column(String(100), index=True, nullable=False)
+
+    def __repr__(self):
+        return (
+            f"<WorkpayMpesaTransaction(id={self.id}, api_reference='{self.api_reference}', "
+            f"recipient='{self.recipient}', amount={self.amount})>"
+        )
 
 
-class MpesaWithdrawn(MpesaTransaction):
-    __tablename__ = "mpesa_withdrawn"
+class MpesaDebit(MpesaTransaction):
+    __tablename__ = "mpesa_debits"
 
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
-    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="mpesa_withdrawn")
-    __table_args__ = (UniqueConstraint('reference', 'session_id', 'id',  name='uq_tid_session'),)
+    __table_args__ = (UniqueConstraint('reference', name='uq_reference'),)
 
 
-class MpesaPaidIn(MpesaTransaction):
-    __tablename__ = "mpesa_deposit"
-
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
-    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="mpesa_paid_in")
-    __table_args__ = (UniqueConstraint('reference', 'session_id', 'id',  name='uq_tid_session'),)
+class MpesaCredit(MpesaTransaction):
+    __tablename__ = "mpesa_credits"
 
 
 class MpesaCharge(MpesaTransaction):
-    __tablename__ = "mpesa_charge"
-
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
-    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="mpesa_charges")
-    __table_args__ = (UniqueConstraint('reference', 'session_id', 'id', name='uq_tid_session'),)
+    __tablename__ = "mpesa_charges"
 
 
-class WpMpesaPayout(WorkpayMpesaTransaction):
-    __tablename__ = "wp_mpesa_payouts"
-
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
-    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="wp_mpesa_payouts")
-    __table_args__ = (UniqueConstraint('transaction_id', 'session_id', 'id', name='uq_tid_session'),)
+class WorkpayMpesaPayout(WorkpayMpesaTransaction):
+    __tablename__ = "workpay_mpesa_payouts"
 
 
-class WpMpesaRefund(WorkpayMpesaTransaction):
-    __tablename__ = "wp_mpesa_refunds"
-
-    session_id: Mapped[String] = mapped_column(String(50), ForeignKey("recon_session.id"), nullable=False, index=True)
-    recon_session: Mapped["ReconciliationSession"] = relationship("ReconciliationSession", back_populates="wp_mpesa_refunds")
-    __table_args__ = (UniqueConstraint('transaction_id', 'session_id', 'id',  name='uq_tid_session'),)
-
+class WorkpayMpesaRefund(WorkpayMpesaTransaction):
+    __tablename__ = "workpay_mpesa_refund"
 

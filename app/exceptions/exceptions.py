@@ -4,24 +4,20 @@ class MainException(Exception):
         self.message = message
         self.status_code = status_code
 
-
-class ControllerException(MainException):
+class RedisException(MainException):
     pass
 
-class SessionServiceException(MainException):
+class FileUploadException(MainException):
     pass
 
-class FileTypeException(MainException):
+class ReadFileException(MainException):
     pass
 
-class EntityNotFoundException(MainException):
+class FileOperationsException(MainException):
     pass
 
-class EmptyDataException(MainException):
+class ReconciliationException(MainException):
     pass
 
-class ServiceExecutionException(MainException):
-    pass
-
-class NullValueException(MainException):
+class DbOperationException(MainException):
     pass

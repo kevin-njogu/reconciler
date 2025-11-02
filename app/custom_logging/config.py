@@ -1,5 +1,3 @@
-import logging
-import logging.config
 import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,8 +28,8 @@ LOGGING = {
         "file": {
             "class": "logging.handlers.RotatingFileHandler",
             "filename": os.path.join(LOG_DIR, "app.log"),
-            "maxBytes": 5 * 1024 * 1024,
-            "backupCount": 5,
+            # "maxBytes": 5 * 1024 * 1024,
+            # "backupCount": 5,
             "encoding": "utf8",
             "filters": ["correlation_id"],
             "formatter": "standard",
