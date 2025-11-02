@@ -37,5 +37,5 @@ def read_file(session_id:str, filename_prefix, sheet_name=0, excel_skip_rows=0, 
         return df
     except FileNotFoundError as e:
         raise ReadFileException(f"File not found {str(e)}")
-    except Exception as e:
-        raise ReadFileException(str(e))
+    except Exception:
+        raise

@@ -38,7 +38,7 @@ def get_current_redis_session_id() -> dict:
         client = redis_client(REDIS_URL)
         current_key = client.get(CURRENT_SESSION_KEY)
         if not current_key:
-           raise RedisException("No current key currently set")
+           return {"message": "no current key set"}
         current_value = client.get(current_key)
         return {"current_session_key": current_key, "value": current_value}
     except Exception:

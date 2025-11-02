@@ -5,8 +5,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - mysql
-      - redis
+      reconciler:
+        condition: service_healthy
+      redis_db:
+        condition: service_started
     env_file:
       - .env
     volumes:
@@ -16,7 +18,7 @@ services:
       - REDIS_URL=${REDIS_URL_DOCKER}
     restart: always
 
-  mysql:
+  reconciler:
     image: mysql:8.0
     container_name: reconciler
     restart: always
@@ -31,8 +33,14 @@ services:
       - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DOCKER_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  redis:
+
+  redis_db:
     image: redis:7-alpine
     container_name: redis_db
     restart: always
