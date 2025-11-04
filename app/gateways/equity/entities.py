@@ -42,7 +42,7 @@ class WorkpayEquityTransaction(Base):
 class EquityDebit(EquityTransaction):
     __tablename__ = "equity_debits"
 
-    __table_args__ = (UniqueConstraint('details', name='uq_tid_session'),)
+    __table_args__ = (UniqueConstraint('details', 'session',  name='uq_details_session'),)
 
 
 class EquityCredit(EquityTransaction):

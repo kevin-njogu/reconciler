@@ -43,7 +43,7 @@ class WorkpayKcbTransaction(Base):
 class KcbDebit(KcbTransaction):
     __tablename__ = "kcb_debits"
 
-    __table_args__ = (UniqueConstraint('reference', name='uq_reference'),)
+    __table_args__ = (UniqueConstraint('reference', 'session', name='uq_reference_session'),)
 
 
 class KcbCredit(KcbTransaction):

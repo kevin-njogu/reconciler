@@ -42,7 +42,7 @@ class WorkpayMpesaTransaction(Base):
 class MpesaDebit(MpesaTransaction):
     __tablename__ = "mpesa_debits"
 
-    __table_args__ = (UniqueConstraint('reference', name='uq_reference'),)
+    __table_args__ = (UniqueConstraint('reference', 'session',  name='uq_reference_session'),)
 
 
 class MpesaCredit(MpesaTransaction):
