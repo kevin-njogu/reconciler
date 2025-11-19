@@ -51,7 +51,7 @@ def reconcile_mpesa_payouts(session_id: str):
             mpesa_debits[bank_details_col].astype(str).fillna("").str.strip().str.upper()
         )
         workpay_payouts[workpay_api_ref_col] = (
-            workpay_payouts[workpay_api_ref_col].astype(str).fillna("").str.strip().str.upper()
+            workpay_payouts[workpay_api_ref_col].astype(str).fillna("").str.strip().str.lower()
         )
         workpay_payouts[workpay_api_tid_col] = (
             workpay_payouts[workpay_api_tid_col].astype(str).fillna("").str.strip().str.upper()

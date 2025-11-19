@@ -6,13 +6,26 @@ from app.exceptions.exceptions import RedisException
 
 load_dotenv()
 # REDIS_URL = os.getenv("REDIS_LOCAL_URL")
-REDIS_URL = os.getenv("REDIS_URL_DOCKER")
+# REDIS_URL = os.getenv("REDIS_URL_DOCKER")
 CURRENT_SESSION_KEY = 'current_id'
 
 
-def redis_client(redis_url:str):
+def choose_redis_path():
     try:
-        parsed = urlparse(redis_url)
+        running_in_docker = os.path.exists("/.dockerenv")
+        redis_url = (
+            os.getenv("REDIS_URL_DOCKER") if running_in_docker
+            else os.getenv("REDIS_URL_LOCAL")
+        )
+        return redis_url
+    except Exception:
+        raise
+
+
+def redis_client():
+    try:
+        redis_path = choose_redis_path()
+        parsed = urlparse(redis_path)
         return redis.Redis(
             host=parsed.hostname,
             port=parsed.port or 6379,
@@ -25,7 +38,7 @@ def redis_client(redis_url:str):
 
 def set_current_redis_session_id(session_id: str, data:str = "active") -> str:
     try:
-        client = redis_client(REDIS_URL)
+        client = redis_client()
         client.set(session_id, data)
         client.set(CURRENT_SESSION_KEY, session_id)
         return f"{session_id} created successfully"
@@ -35,7 +48,7 @@ def set_current_redis_session_id(session_id: str, data:str = "active") -> str:
 
 def get_current_redis_session_id() -> dict:
     try:
-        client = redis_client(REDIS_URL)
+        client = redis_client()
         current_key = client.get(CURRENT_SESSION_KEY)
         if not current_key:
            return {"message": "no current key set"}
@@ -47,7 +60,7 @@ def get_current_redis_session_id() -> dict:
 
 def get_all_redis_sessions(pattern: str = "sess:*") -> dict:
     try:
-        client = redis_client(REDIS_URL)
+        client = redis_client()
         sessions = {}
         for key in client.scan_iter(match=pattern):
             sessions[key] = client.get(key)

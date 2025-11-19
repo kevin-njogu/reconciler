@@ -28,7 +28,12 @@ def read_file(session_id:str, filename_prefix, sheet_name=0, excel_skip_rows=0, 
                 if file.suffix == XLSX_EXTENSION:
                     df = read_excel_files(file, sheet_name=sheet_name, engine=XLSX_ENGINE, skip_rows=excel_skip_rows)
                 elif file.suffix == XLS_EXTENSION:
-                    df = read_excel_files(file, sheet_name=sheet_name, engine=XLS_ENGINE, skip_rows=excel_skip_rows)
+                    #df = read_excel_files(file, sheet_name=sheet_name, engine=XLS_ENGINE, skip_rows=excel_skip_rows)
+                    try:
+                        df = read_excel_files(file, sheet_name=sheet_name, engine=XLS_ENGINE, skip_rows=excel_skip_rows)
+                    except Exception:
+                        # fallback if .xls file is actually .xlsx
+                        df = read_excel_files(file, sheet_name=sheet_name, engine=XLSX_ENGINE, skip_rows=excel_skip_rows)
                 elif file.suffix == CSV_EXTENSION:
                     df = pd.read_csv(file, skiprows=csv_skip_rows)
                 else:

@@ -7,10 +7,14 @@ wp_cols_dict = {col: col for col in ['date', 'transaction_id', 'api_reference', 
                                      'recipient_fee', 'processing_status', 'remarks']}
 
 
-FILE_CONFIGS_EQUITY = {"name": "equity", "prefix":"1000", "excel_rows":8, "csv_rows":5, "sheet_name":0}
+FILE_CONFIGS_EQUITY = {"name": "equity", "prefix":"Account_statement", "excel_rows":8, "csv_rows":5, "sheet_name":0}
 FILE_CONFIGS_WORKPAY_EQUITY= {"name": "workpay_equity", "prefix":"equity_payouts", "excel_rows":0, "csv_rows":0,
                               "sheet_name":"KES"}
 EQUITY_COLUMNS = {"date":"Date", "transaction_date": "Transaction Date", "value_date": "Value Date", "details": "Narrative",
+                  "reference": "Customer Reference", "debits": "Debit", "credits": "Credit", "remarks": "Remarks",
+                  "session": "Session"}
+
+NEW_EQUITY_COLUMNS = {"transaction_date": "Transaction Date", "value_date": "Value Date", "details": "Narrative",
                   "reference": "Customer Reference", "debits": "Debit", "credits": "Credit", "remarks": "Remarks",
                   "session": "Session"}
 

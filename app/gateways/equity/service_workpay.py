@@ -23,6 +23,8 @@ def get_workpay_equity_data(session_key: str, configs:dict) -> pd.DataFrame:
         raise
 
 
+
+
 def clean_workpay_equity_data(session_id: str, cols: dict, configs: dict) -> pd.DataFrame:
     try:
         new_df_cols = ['date', "transaction_id", "api_reference", "recipient", "amount", "sender_fee",

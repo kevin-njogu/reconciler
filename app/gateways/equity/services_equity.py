@@ -5,6 +5,7 @@ from app.utility_functions.assign_ref_column import assign_reference_column
 from app.utility_functions.constant_variables import UNRECONCILED, DEPOSITS, CHARGES
 from app.utility_functions.drop_equity_rows import drop_bottom_rows
 from app.utility_functions.drop_equity_unnamed_cols import drop_unnamed_columns
+from app.utility_functions.file_configurations import FILE_CONFIGS_EQUITY
 from app.utility_functions.handle_gateway_dates import handle_gateway_date_columns
 from app.utility_functions.handle_null_refs import handle_null_references_column
 from app.utility_functions.handle_numerics import handle_numeric_columns
@@ -19,10 +20,10 @@ def get_equity_data(session_key: str, configs:dict) -> pd.DataFrame:
                        excel_skip_rows=configs.get("excel_rows"),
                        csv_skip_rows=configs.get("csv_rows")
                        )
+        print(df)
         return df
     except Exception:
         raise
-
 
 def clean_equity_data(session_key: str, configs: dict,  gateway_columns:dict) -> pd.DataFrame:
     try:
@@ -38,7 +39,7 @@ def clean_equity_data(session_key: str, configs: dict,  gateway_columns:dict) ->
         name = configs.get('name')
         remarks = gateway_columns.get("remarks")
         session = gateway_columns.get("session")
-        date_format = "%d-%m-%Y"
+        date_format = "%d/%m/%Y"
 
         df = get_equity_data(session_key, configs)
 
