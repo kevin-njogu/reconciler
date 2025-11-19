@@ -45,16 +45,16 @@ def reconcile_mpesa_payouts(session_id: str):
         workpay_payouts = dfs.get('workpay_payouts')
 
         mpesa_debits[bank_reference_col] = (
-            mpesa_debits[bank_reference_col].astype(str).fillna("").str.strip().str.upper()
+            mpesa_debits[bank_reference_col].astype(str).fillna("").str.strip().str.lower()
         )
         mpesa_debits[bank_details_col] = (
-            mpesa_debits[bank_details_col].astype(str).fillna("").str.strip().str.upper()
+            mpesa_debits[bank_details_col].astype(str).fillna("").str.strip().str.lower()
         )
         workpay_payouts[workpay_api_ref_col] = (
             workpay_payouts[workpay_api_ref_col].astype(str).fillna("").str.strip().str.lower()
         )
         workpay_payouts[workpay_api_tid_col] = (
-            workpay_payouts[workpay_api_tid_col].astype(str).fillna("").str.strip().str.upper()
+            workpay_payouts[workpay_api_tid_col].astype(str).fillna("").str.strip().str.lower()
         )
 
         combined_bank_refs = set(mpesa_debits[bank_reference_col]) | set(mpesa_debits[bank_details_col])
