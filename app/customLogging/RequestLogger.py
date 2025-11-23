@@ -16,7 +16,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         logger.info(
             f"REQUEST: {request.method} {request.url.path} "
             f"Query={dict(request.query_params)} "
-            f"Body={body.decode('utf-8') if body else None} "
+            # f"Body={body.decode('utf-8') if body else None} "
             f"Headers={dict(request.headers)}"
         )
 

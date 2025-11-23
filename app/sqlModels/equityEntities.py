@@ -51,11 +51,11 @@ class EquityDebit(EquityTransaction):
 
 
 class EquityCredit(EquityTransaction):
-    __tablename__ = "gateway_credits"
+    __tablename__ = "equity_credits"
 
 
 class EquityCharge(EquityTransaction):
-    __tablename__ = "gateway_charges"
+    __tablename__ = "equity_charges"
 
 
 class WorkpayEquityPayout(WorkpayEquityTransaction):

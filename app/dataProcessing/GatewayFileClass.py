@@ -3,6 +3,7 @@ from typing import Optional, List, Union
 
 import pandas as pd
 
+from app.dataLoading.readGcs import LoadDataFromGcs
 from app.exceptions.exceptions import ReadFileException, ColumnValidationException, FileOperationsException
 from app.fileConfigs.MpesaConfigs import MpesaConfigs
 
@@ -37,7 +38,8 @@ class GatewayFile:
         df = pd.DataFrame()
         if data_loader is None:
             from app.dataLoading.read import LoadData
-            data_loader = LoadData()
+            #data_loader = LoadData()
+            data_loader = LoadDataFromGcs("recon_wp")
         try:
             if self.gateway_name == "mpesa":
                 dataframes = []
@@ -129,6 +131,7 @@ class GatewayFile:
         except KeyError as e:
             raise FileOperationsException(f"Invalid column: {e}") from e
         except Exception as e:
+            print(e)
             raise FileOperationsException("Error extracting credit transactions") from e
 
 

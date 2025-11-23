@@ -1,3 +1,4 @@
+from http.client import HTTPException
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -15,23 +16,60 @@ router = APIRouter(prefix='/api/v1', tags=['Reconciliation Endpoints'])
 
 db_session = Depends(get_database)
 
+# @router.post("/reconcile/{gateway}")
+# async def reconcile(gateway: str, db: Session=db_session, session_id: Optional[str] = Query(default=None)):
+#     try:
+#         curr_sess_id = get_current_redis_session_id().get("current_session_key")
+#         session = curr_sess_id if session_id is None else session_id
+#         if gateway.lower() == "equity":
+#             reconciler = GatewayReconciler(session_id=session, gateway_configs=EquityConfigs,
+#                                            workpay_configs=WorkpayEquityConfigs, gateway_name=gateway, db_session= db)
+#             reconciler.save_reconciled()
+#         elif gateway.lower() == "kcb":
+#             reconciler = GatewayReconciler(session_id=session, gateway_configs=KcbConfigs,
+#                                            workpay_configs=WorkpayKcbConfigs, gateway_name=gateway, db_session= db)
+#             reconciler.save_reconciled()
+#         elif gateway.lower() == "mpesa":
+#             reconciler = GatewayReconciler(session_id=session, gateway_configs=MpesaConfigs,
+#                                            workpay_configs=WorkpayMpesaConfigs, gateway_name=gateway, db_session= db)
+#             reconciler.save_reconciled()
+#         return JSONResponse(content="Reconciliation process completed", status_code=201)
+#     except Exception as e:
+#         raise HTTPException(f"Error reconciling {gateway} gateway: {e}")
+#
+
+GATEWAY_CONFIGS = {
+    "equity": (EquityConfigs, WorkpayEquityConfigs),
+    "kcb": (KcbConfigs, WorkpayKcbConfigs),
+    "mpesa": (MpesaConfigs, WorkpayMpesaConfigs),
+}
+
 @router.post("/reconcile/{gateway}")
-async def reconcile(gateway: str, db: Session=db_session, session_id: Optional[str] = Query(default=None)):
+async def reconcile(
+    gateway: str,
+    db: Session = db_session,
+    session_id: Optional[str] = Query(default=None)
+):
     try:
+        # Determine current session
         curr_sess_id = get_current_redis_session_id().get("current_session_key")
-        session = curr_sess_id if session_id is None else session_id
-        if gateway.lower() == "equity":
-            reconciler = GatewayReconciler(session_id=session, gateway_configs=EquityConfigs,
-                                           workpay_configs=WorkpayEquityConfigs, gateway_name=gateway, db_session= db)
-            reconciler.save_reconciled()
-        elif gateway.lower() == "kcb":
-            reconciler = GatewayReconciler(session_id=session, gateway_configs=KcbConfigs,
-                                           workpay_configs=WorkpayKcbConfigs, gateway_name=gateway, db_session= db)
-            reconciler.save_reconciled()
-        elif gateway.lower() == "mpesa":
-            reconciler = GatewayReconciler(session_id=session, gateway_configs=MpesaConfigs,
-                                           workpay_configs=WorkpayMpesaConfigs, gateway_name=gateway, db_session= db)
-            reconciler.save_reconciled()
+        session = session_id or curr_sess_id
+
+        gateway_lower = gateway.lower()
+        if gateway_lower not in GATEWAY_CONFIGS:
+            raise HTTPException(status_code=400, detail=f"Unsupported gateway '{gateway}'")
+
+        gateway_conf, workpay_conf = GATEWAY_CONFIGS[gateway_lower]
+
+        reconciler = GatewayReconciler(
+            session_id=session,
+            gateway_configs=gateway_conf,
+            workpay_configs=workpay_conf,
+            gateway_name=gateway_lower,
+            db_session=db
+        )
+        reconciler.save_reconciled()
+
         return JSONResponse(content="Reconciliation process completed", status_code=201)
-    except Exception:
-        raise
+    except Exception as e:
+        raise HTTPException(f"Error reconciling {gateway} gateway: {e}")

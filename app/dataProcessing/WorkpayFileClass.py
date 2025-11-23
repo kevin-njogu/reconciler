@@ -2,6 +2,7 @@ from typing import Optional, List
 
 import pandas as pd
 
+from app.dataLoading.readGcs import LoadDataFromGcs
 from app.exceptions.exceptions import ReadFileException, ColumnValidationException, FileOperationsException
 
 
@@ -34,7 +35,8 @@ class WorkpayFile:
     def load_data(self, data_loader=None) -> None:
         if data_loader is None:
             from app.dataLoading.read import LoadData  # import here for decoupling
-            data_loader = LoadData()
+            # data_loader = LoadData()
+            data_loader = LoadDataFromGcs("recon_wp")
         try:
             df = data_loader.read_file(
                 session_id=self.session_id,
