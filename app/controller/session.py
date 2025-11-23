@@ -24,7 +24,7 @@ async def create_session(db: Session = db_session):
     """
     try:
         session_key = generate_recon_session_key()
-        create_uploads_directory(session_key, "uploads")
+        #create_uploads_directory(session_key, "uploads") --> Works with local uploads
         message = set_current_redis_session_id(session_key)
         return JSONResponse(content=message)
     except Exception as e:
