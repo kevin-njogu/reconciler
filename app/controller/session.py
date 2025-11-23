@@ -6,7 +6,7 @@ from app.database.mysql_configs import get_database
 from app.database.redis_configs import *
 from app.dataLoading.upload import generate_recon_session_key, create_uploads_directory, process_upload_file
 
-router = APIRouter(prefix='/api/v1', tags=['Handle Uploads'])
+router = APIRouter(prefix='/api/v1', tags=['Session Endpoints'])
 
 db_session = Depends(get_database)
 
@@ -35,15 +35,5 @@ async def get_current_session():
     try:
         key = get_current_redis_session_id()
         return JSONResponse(content=key, status_code=200)
-    except Exception:
-        raise
-
-
-@router.post("/upload/file", description="equity, wp-equity, utility, mmf, wp-mpesa, kcb, wp-kcb")
-async def upload_file(file: UploadFile = File(...), session_id: dict = Depends(get_current_redis_session_id)):
-    try:
-        session_key = session_id.get("current_session_key")
-        response = await process_upload_file(file, session_key)
-        return JSONResponse(content=response, status_code=201)
     except Exception:
         raise

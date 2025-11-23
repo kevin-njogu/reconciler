@@ -2,13 +2,10 @@ import os
 import redis
 from dotenv import load_dotenv
 from urllib.parse import urlparse
-from app.exceptions.exceptions import RedisException
+
 
 load_dotenv()
-# REDIS_URL = os.getenv("REDIS_LOCAL_URL")
-# REDIS_URL = os.getenv("REDIS_URL_DOCKER")
 CURRENT_SESSION_KEY = 'current_id'
-
 
 def choose_redis_path():
     try:

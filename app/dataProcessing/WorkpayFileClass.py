@@ -5,7 +5,7 @@ import pandas as pd
 from app.exceptions.exceptions import ReadFileException, ColumnValidationException, FileOperationsException
 
 
-class WorkpayFIle:
+class WorkpayFile:
 
     def __init__(self, session_id: str, configs):
         self.session_id = session_id
@@ -184,11 +184,3 @@ class WorkpayFIle:
             raise ColumnValidationException(
                 f"The following required columns are missing in '{self.file_name_prefix}': {missing_columns}"
             )
-
-
-
-# wp_file = WorkpayFIle( "sess:2025-11-21_06:29:47", WorkpayKcbConfigs)
-# debits = wp_file.get_workpay_equity_payouts()
-# refunds = wp_file.get_workpay_equity_refunds()
-# topUps = wp_file.get_workpay_equity_top_ups()
-# print(debits)

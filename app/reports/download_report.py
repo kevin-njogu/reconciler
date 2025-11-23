@@ -3,13 +3,14 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
+
+from app.reports.output_writer import write_to_excel
 from app.sqlModels.equityEntities import *
 from app.pydanticModels.equityModels import *
 from app.sqlModels.kcbEntities import *
 from app.pydanticModels.kcbModels import *
 from app.sqlModels.mpesaEntities import *
 from app.pydanticModels.mpesaModels import *
-from app.utility_functions.output_writer import write_to_excel
 
 
 def map_to_schema(records, schema):
@@ -23,7 +24,7 @@ def schema_to_dataframe(schema_records):
 def load_all(db_session: Session, session_id: str, *models):
     results = []
     for model in models:
-        stmt = select(model).where(model.session == session_id)
+        stmt = select(model).where(model.reconciliation_session == session_id)
         records = db_session.execute(stmt).scalars().all()
         results.append(records)
     return results

@@ -16,7 +16,7 @@ from app.sqlModels.mpesaEntities import WorkpayMpesaPayout, WorkpayMpesaRefund, 
 from app.pydanticModels.mpesaModels import MpesaTransactionBase, WorkpayMpesaTransactionBase
 
 
-class EquityGatewayReconciler:
+class GatewayReconciler:
 
     def __init__(self, session_id: str, gateway_configs, workpay_configs, gateway_name: str, db_session:Session,
                  gateway_file_factory: Optional[Callable[[str], object]] = None,
@@ -50,8 +50,8 @@ class EquityGatewayReconciler:
     def _create_workpay_file_class(self):
         if self.workpay_file_factory:
             return self.workpay_file_factory(self.session_id)
-        from app.dataProcessing.WorkpayFIleClass import WorkpayFIle
-        return WorkpayFIle(self.session_id, self.workpay_configs)
+        from app.dataProcessing.WorkpayFileClass import WorkpayFile
+        return WorkpayFile(self.session_id, self.workpay_configs)
 
 
     def load_dataframes(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -274,9 +274,11 @@ class EquityGatewayReconciler:
         }
         return mappings
 
+# def get_db_session():
+#     return SessionLocal()
+#
+# db = get_db_session()
+#
+# reconciler = GatewayReconciler(session_id="sess:2025-11-21_06:29:47", gateway_configs=EquityConfigs,
+#                                workpay_configs=WorkpayEquityConfigs, gateway_name="equity", db_session=db)
 
-# reconciler = EquityGatewayReconciler("sess:2025-11-21_06:29:47")
-# bank, internal = reconciler.load_dataframes()
-# bank, internal = reconciler.reconcile_equity()
-# print(internal["API Reference"])
-# reconciler.save_reconciled()

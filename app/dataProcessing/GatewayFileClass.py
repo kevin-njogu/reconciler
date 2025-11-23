@@ -4,6 +4,7 @@ from typing import Optional, List, Union
 import pandas as pd
 
 from app.exceptions.exceptions import ReadFileException, ColumnValidationException, FileOperationsException
+from app.fileConfigs.MpesaConfigs import MpesaConfigs
 
 
 class GatewayFile:
@@ -26,7 +27,6 @@ class GatewayFile:
         self.date_format = configs.DATE_FORMAT
         self.gateway_name = configs.GATEWAY_NAME
         self.charges_filters = configs.CHARGES_FILTER_KEY
-        self.mpesa_prefixes = configs.MPESA_PREFIXES
 
 
     def set_dataframe(self, df: pd.DataFrame):
@@ -36,12 +36,12 @@ class GatewayFile:
     def load_data(self, data_loader=None) -> None:
         df = pd.DataFrame()
         if data_loader is None:
-            from app.dataLoading.read import LoadData  # import here for decoupling
+            from app.dataLoading.read import LoadData
             data_loader = LoadData()
         try:
             if self.gateway_name == "mpesa":
                 dataframes = []
-                for prefix in self.mpesa_prefixes:
+                for prefix in MpesaConfigs.MPESA_PREFIXES:
                     try:
                         df = data_loader.read_file(
                             session_id=self.session_id,
@@ -223,37 +223,3 @@ class GatewayFile:
                 f"The following required columns are missing in '{self.file_name_prefix}': {missing_columns}"
             )
 
-
-#eq_file = GatewayFile( "sess:2025-11-21_06:29:47", EquityConfigs)
-# eq_file.load_data()
-# eq_file.normalize_data()
-# debits = eq_file.get_equity_debits()
-# credits = eq_file.get_equity_credits()
-# charges =  eq_file.get_equity_charges()
-# print(charges)
-
-# kcb_file = GatewayFile("sess:2025-11-21_06:29:47", KcbConfigs)
-# eq_file.load_data()
-# eq_file.normalize_data()
-# debits = kcb_file.get_equity_debits()
-# credits = kcb_file.get_equity_credits()
-# charges =  kcb_file.get_equity_charges()
-# print(credits)
-
-# utility_file = GatewayFile("sess:2025-11-21_06:29:47", UtilityConfigs)
-# debits = utility_file.get_equity_debits()
-# credits = utility_file.get_equity_credits()
-# charges =  utility_file.get_equity_charges()
-# print(charges)
-
-# mmf_file = GatewayFile("sess:2025-11-21_06:29:47", MmfConfigs)
-# debits = mmf_file.get_equity_debits()
-# credits = mmf_file.get_equity_credits()
-# charges =  mmf_file.get_equity_charges()
-# print(charges)
-
-# mpesa_file = GatewayFile("sess:2025-11-21_06:29:47", MpesaConfigs)
-# debits = mpesa_file.get_equity_debits()
-# credits = mpesa_file.get_equity_credits()
-# charges =  mpesa_file.get_equity_charges()
-# print(debits)
