@@ -4,15 +4,12 @@ from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse
 from app.database.mysql_configs import get_database
 from app.database.redis_configs import get_current_redis_session_id
-from app.gateways.equity.EquityConfigs import EquityConfigs
-from app.gateways.equity.EquityGatewayReconciler import EquityGatewayReconciler
-from app.gateways.equity.KcbConfigs import KcbConfigs
-from app.gateways.equity.MpesaConfigs import MpesaConfigs
-from app.gateways.equity.WorkpayConfigs import WorkpayEquityConfigs, WorkpayKcbConfigs, WorkpayMpesaConfigs
-from app.gateways.equity.reconcile_equity import save_reconciled as equity_reconciler
-from app.gateways.kcb.reconcile_kcb import save_reconciled as kcb_reconciler
-from app.gateways.mpesa.reconcile_mpesa import save_reconciled as mpesa_reconciler
-from app.gateways.services.download_report import download_gateway_report
+from app.fileConfigs.EquityConfigs import EquityConfigs
+from app.reconciler.Reconciler import EquityGatewayReconciler
+from app.fileConfigs.KcbConfigs import KcbConfigs
+from app.fileConfigs.MpesaConfigs import MpesaConfigs
+from app.fileConfigs.WorkpayConfigs import WorkpayEquityConfigs, WorkpayKcbConfigs, WorkpayMpesaConfigs
+from app.reports.download_report import download_gateway_report
 
 router = APIRouter(prefix='/api/v1', tags=['Gateway Controller'])
 

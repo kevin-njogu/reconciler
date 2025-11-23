@@ -4,7 +4,7 @@ from typing import Union, Optional
 import pandas as pd
 
 from app.exceptions.exceptions import ReadFileException
-from app.uploads_logic.handle_uploads import get_uploads_dir
+from app.dataLoading.upload import get_uploads_dir
 
 
 class LoadData:

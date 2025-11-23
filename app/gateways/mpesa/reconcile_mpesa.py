@@ -1,8 +1,8 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.exceptions.exceptions import ReconciliationException, DbOperationException
-from app.gateways.mpesa.entities import *
-from app.gateways.mpesa.models import *
+from app.sqlModels.mpesaEntities import *
+from app.pydanticModels.mpesaModels import *
 from app.gateways.mpesa.service_workpay import *
 from app.gateways.mpesa.services_mpesa import  *
 from app.utility_functions.constant_variables import RECONCILED, UNRECONCILED

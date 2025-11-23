@@ -1,9 +1,8 @@
-from typing import Optional, List, Union
+from typing import Optional, List
 
 import pandas as pd
 
 from app.exceptions.exceptions import ReadFileException, ColumnValidationException, FileOperationsException
-from app.gateways.equity.WorkpayConfigs import WorkpayEquityConfigs, WorkpayMpesaConfigs, WorkpayKcbConfigs
 
 
 class WorkpayFIle:
@@ -34,7 +33,7 @@ class WorkpayFIle:
 
     def load_data(self, data_loader=None) -> None:
         if data_loader is None:
-            from app.dataLoading.LoadData import LoadData  # import here for decoupling
+            from app.dataLoading.read import LoadData  # import here for decoupling
             data_loader = LoadData()
         try:
             df = data_loader.read_file(

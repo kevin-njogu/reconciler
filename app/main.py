@@ -3,12 +3,11 @@ from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI
 from app.database.mysql_configs import Base, engine
 import logging.config
-from app.custom_logging.config import LOGGING
+from app.customLogging.config import LOGGING
 from app.exceptions.exceptions import MainException
 from app.exceptions.handlers import main_exception_handler, global_exception_handler
 from app.uploads_logic import controllers as uploads_controllers
-from app.gateways.controllers import gateway_controllers
-
+from app.controller import gateway_controllers
 
 logging.config.dictConfig(LOGGING)
 logger = logging.getLogger(__name__)

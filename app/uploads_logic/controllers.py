@@ -4,7 +4,7 @@ from starlette.responses import JSONResponse
 
 from app.database.mysql_configs import get_database
 from app.database.redis_configs import *
-from app.uploads_logic.handle_uploads import generate_recon_session_key, create_uploads_directory, process_upload_file
+from app.dataLoading.upload import generate_recon_session_key, create_uploads_directory, process_upload_file
 
 router = APIRouter(prefix='/api/v1', tags=['Handle Uploads'])
 

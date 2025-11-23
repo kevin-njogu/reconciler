@@ -3,12 +3,12 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
-from app.gateways.equity.entities import *
-from app.gateways.equity.models import *
-from app.gateways.kcb.entities import *
-from app.gateways.kcb.models import *
-from app.gateways.mpesa.entities import *
-from app.gateways.mpesa.models import *
+from app.sqlModels.equityEntities import *
+from app.pydanticModels.equityModels import *
+from app.sqlModels.kcbEntities import *
+from app.pydanticModels.kcbModels import *
+from app.sqlModels.mpesaEntities import *
+from app.pydanticModels.mpesaModels import *
 from app.utility_functions.output_writer import write_to_excel
 
 

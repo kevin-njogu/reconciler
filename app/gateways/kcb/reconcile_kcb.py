@@ -1,5 +1,5 @@
-from app.gateways.kcb.entities import *
-from app.gateways.kcb.models import *
+from app.sqlModels.kcbEntities import *
+from app.pydanticModels.kcbModels import *
 from app.gateways.kcb.service_workpay import *
 from app.gateways.kcb.services_kcb import *
 from sqlalchemy.exc import IntegrityError

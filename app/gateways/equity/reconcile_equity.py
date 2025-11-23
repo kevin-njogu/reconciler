@@ -1,8 +1,8 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.exceptions.exceptions import ReconciliationException, DbOperationException
-from app.gateways.equity.entities import *
-from app.gateways.equity.models import *
+from app.sqlModels.equityEntities import *
+from app.pydanticModels.equityModels import *
 from app.gateways.equity.service_workpay import *
 from app.gateways.equity.services_equity import *
 from app.utility_functions.constant_variables import RECONCILED, UNRECONCILED

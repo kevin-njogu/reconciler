@@ -4,17 +4,16 @@ import pandas as pd
 import numpy as np
 from sqlalchemy.exc import IntegrityError
 
-from app.database.mysql_configs import get_database
 from app.exceptions.exceptions import ReconciliationException, DbOperationException
 from sqlalchemy.orm import Session
 
-from app.gateways.equity.entities import EquityDebit, EquityCredit, EquityCharge, WorkpayEquityPayout, \
+from app.sqlModels.equityEntities import EquityDebit, EquityCredit, EquityCharge, WorkpayEquityPayout, \
     WorkpayEquityRefund, WorkpayTopUp
-from app.gateways.equity.models import EquityTransactionBase, WorkpayEquityTransactionBase
-from app.gateways.kcb.entities import KcbDebit, KcbCredit, KcbCharge, WorkpayKcbPayout, WorkpayKcbRefund
-from app.gateways.kcb.models import KcbTransactionBase, WorkpayKcbTransactionBase
-from app.gateways.mpesa.entities import WorkpayMpesaPayout, WorkpayMpesaRefund, MpesaDebit, MpesaCredit, MpesaCharge
-from app.gateways.mpesa.models import MpesaTransactionBase, WorkpayMpesaTransactionBase
+from app.pydanticModels.equityModels import EquityTransactionBase, WorkpayEquityTransactionBase
+from app.sqlModels.kcbEntities import KcbDebit, KcbCredit, KcbCharge, WorkpayKcbPayout, WorkpayKcbRefund
+from app.pydanticModels.kcbModels import KcbTransactionBase, WorkpayKcbTransactionBase
+from app.sqlModels.mpesaEntities import WorkpayMpesaPayout, WorkpayMpesaRefund, MpesaDebit, MpesaCredit, MpesaCharge
+from app.pydanticModels.mpesaModels import MpesaTransactionBase, WorkpayMpesaTransactionBase
 
 
 class EquityGatewayReconciler:
@@ -44,14 +43,14 @@ class EquityGatewayReconciler:
     def _create_gateway_file_class(self):
         if self.gateway_file_factory:
             return self.gateway_file_factory(self.session_id)
-        from app.gateways.equity.GatewayFileClass import GatewayFile
+        from app.dataProcessing.GatewayFileClass import GatewayFile
         return GatewayFile(self.session_id, self.gateway_configs)
 
 
     def _create_workpay_file_class(self):
         if self.workpay_file_factory:
             return self.workpay_file_factory(self.session_id)
-        from app.gateways.equity.WorkpayFIleClass import WorkpayFIle
+        from app.dataProcessing.WorkpayFIleClass import WorkpayFIle
         return WorkpayFIle(self.session_id, self.workpay_configs)
 
 
