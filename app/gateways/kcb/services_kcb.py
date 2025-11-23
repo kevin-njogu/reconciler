@@ -30,7 +30,7 @@ def clean_kcb_data(session_key: str, configs: dict,  gateway_columns:dict) -> pd
     try:
         new_cols = ["date", "details", "reference", "debits", "credits", "remarks", "session"]
         unnamed_columns = ['Unnamed: 0', 'Unnamed: 1']
-        transaction_date = gateway_columns.get("transaction_date")
+        transaction_date = gateway_columns.get("date_column")
         value_date = gateway_columns.get("value_date")
         new_date = gateway_columns.get("date")
         debits = gateway_columns.get("debits")

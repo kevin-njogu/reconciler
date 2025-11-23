@@ -21,3 +21,6 @@ class ReconciliationException(MainException):
 
 class DbOperationException(MainException):
     pass
+
+class ColumnValidationException(MainException):
+    pass

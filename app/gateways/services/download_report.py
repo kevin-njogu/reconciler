@@ -55,8 +55,8 @@ def map_equity(db_session: Session, session_id:str):
     wp_payouts_schema = map_to_schema(wp_payouts, WorkpayEquityTransactionBase)
     wp_refunds_schema = map_to_schema(wp_refunds, WorkpayEquityTransactionBase)
     topups_schema = map_to_schema(topups, WorkpayEquityTransactionBase)
-    schemas = {"equity_debits": equity_debits_schema, "equity_credits": equity_credits_schema,
-               "equity_charges": equity_charges_schema, "wp_payouts": wp_payouts_schema, "wp_refunds": wp_refunds_schema,
+    schemas = {"equity_debits": equity_debits_schema, "gateway_credits": equity_credits_schema,
+               "gateway_charges": equity_charges_schema, "wp_payouts": wp_payouts_schema, "wp_refunds": wp_refunds_schema,
                "top_ups": topups_schema}
     return schemas
 

@@ -28,8 +28,8 @@ def get_dataframes(session_id: str):
     try:
         return {
             "equity_debits": get_equity_debits(clean_bank_data, bank_details_col, bank_debits_col, bank_reference_col),
-            "equity_credits": get_equity_credits(clean_bank_data, bank_credits_col, bank_remarks_col),
-            "equity_charges": get_equity_charges(clean_bank_data, bank_details_col, bank_credits_col, bank_remarks_col),
+            "gateway_credits": get_equity_credits(clean_bank_data, bank_credits_col, bank_remarks_col),
+            "gateway_charges": get_equity_charges(clean_bank_data, bank_details_col, bank_credits_col, bank_remarks_col),
             "workpay_payouts": get_workpay_equity_payouts(clean_workpay_data, workpay_api_ref_col),
             "workpay_refunds": get_workpay_equity_refunds(clean_workpay_data, workpay_api_ref_col, workpay_remarks_col),
             "workpay_topups": get_workpay_equity_top_ups(clean_workpay_data, workpay_api_ref_col, workpay_remarks_col),
@@ -78,8 +78,8 @@ def save_reconciled(db:Session, session_id:str):
     try:
         equity_debits, workpay_payouts = reconcile_equity_payouts(session_id)
         dfs = get_dataframes(session_id)
-        equity_credits = dfs.get("equity_credits")
-        equity_charges =  dfs.get("equity_charges")
+        equity_credits = dfs.get("gateway_credits")
+        equity_charges =  dfs.get("gateway_charges")
         workpay_refunds = dfs.get("workpay_refunds")
         workpay_topups = dfs.get("workpay_topups")
 

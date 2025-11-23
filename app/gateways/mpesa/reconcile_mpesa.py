@@ -45,22 +45,29 @@ def reconcile_mpesa_payouts(session_id: str):
         workpay_payouts = dfs.get('workpay_payouts')
 
         mpesa_debits[bank_reference_col] = (
-            mpesa_debits[bank_reference_col].astype(str).fillna("").str.strip().str.lower()
+            mpesa_debits[bank_reference_col].astype(str).fillna("").str.strip()
         )
         mpesa_debits[bank_details_col] = (
-            mpesa_debits[bank_details_col].astype(str).fillna("").str.strip().str.lower()
+            mpesa_debits[bank_details_col].astype(str).fillna("").str.strip()
         )
         workpay_payouts[workpay_api_ref_col] = (
-            workpay_payouts[workpay_api_ref_col].astype(str).fillna("").str.strip().str.lower()
+            workpay_payouts[workpay_api_ref_col].astype(str).fillna("").str.strip()
         )
         workpay_payouts[workpay_api_tid_col] = (
-            workpay_payouts[workpay_api_tid_col].astype(str).fillna("").str.strip().str.lower()
+            workpay_payouts[workpay_api_tid_col].astype(str).fillna("").str.strip()
         )
+
+        def is_in_bank_refs(workpay_value: str) -> bool:
+            if not isinstance(workpay_value, str) or not workpay_value.strip():
+                return False
+            return any(workpay_value in bank_ref for bank_ref in combined_bank_refs)
 
         combined_bank_refs = set(mpesa_debits[bank_reference_col]) | set(mpesa_debits[bank_details_col])
         workpay_payouts[workpay_remarks_col] = np.where(
             workpay_payouts[workpay_api_ref_col].isin(combined_bank_refs)
             | workpay_payouts[workpay_api_tid_col].isin(combined_bank_refs),
+            #| workpay_payouts[workpay_api_ref_col].apply(is_in_bank_refs)
+            #| workpay_payouts[workpay_api_tid_col].apply(is_in_bank_refs),
             RECONCILED,
             UNRECONCILED
         )
@@ -82,6 +89,102 @@ def reconcile_mpesa_payouts(session_id: str):
         return mpesa_debits, workpay_payouts
     except Exception:
         raise
+
+# def reconcile_mpesa_payouts(session_id: str):
+#     try:
+#         dfs = get_dataframes(session_id)
+#
+#         mpesa_debits = dfs.get('mpesa_debits')
+#         workpay_payouts = dfs.get('workpay_payouts')
+#
+#         # Normalize columns
+#         mpesa_debits[bank_reference_col] = (
+#             mpesa_debits[bank_reference_col].astype(str).fillna("").str.strip()
+#         )
+#         mpesa_debits[bank_details_col] = (
+#             mpesa_debits[bank_details_col].astype(str).fillna("").str.strip()
+#         )
+#         workpay_payouts[workpay_api_ref_col] = (
+#             workpay_payouts[workpay_api_ref_col].astype(str).fillna("").str.strip()
+#         )
+#         workpay_payouts[workpay_api_tid_col] = (
+#             workpay_payouts[workpay_api_tid_col].astype(str).fillna("").str.strip()
+#         )
+#
+#         # # Clean bank refs
+#         # combined_bank_refs = set(mpesa_debits[bank_reference_col]) | set(mpesa_debits[bank_details_col])
+#         # combined_bank_refs = {ref for ref in combined_bank_refs if isinstance(ref, str) and ref.strip()}
+#         #
+#         # # Function to check substring match
+#         # def matches_bank_ref(value: str) -> bool:
+#         #     if not isinstance(value, str) or not value.strip():
+#         #         return False
+#         #
+#         #     return any(value.lower() in bank_ref.lower() for bank_ref in combined_bank_refs)
+#         #
+#         # # Apply logic
+#         # workpay_payouts[workpay_remarks_col] = np.where(
+#         #     # Exact matches
+#         #     workpay_payouts[workpay_api_ref_col].isin(combined_bank_refs)
+#         #     | workpay_payouts[workpay_api_tid_col].isin(combined_bank_refs)
+#         #
+#         #     # Substring matches (correct direction)
+#         #     | workpay_payouts[workpay_api_ref_col].apply(matches_bank_ref)
+#         #     | workpay_payouts[workpay_api_tid_col].apply(matches_bank_ref),
+#         #
+#         #     RECONCILED,
+#         #     UNRECONCILED
+#         # )
+#
+#         # Matching workpay ref (with substring matching)
+#         combined_bank_refs = set(mpesa_debits[bank_reference_col]) | set(mpesa_debits[bank_details_col])
+#         # Remove empty strings
+#         combined_bank_refs = {ref for ref in combined_bank_refs if ref}
+#
+#         # Create pattern for substring matching
+#         bank_refs_pattern = "|".join(map(re.escape, combined_bank_refs)) if combined_bank_refs else "^$"
+#
+#         workpay_payouts[workpay_remarks_col] = np.where(
+#             # Exact match
+#             workpay_payouts[workpay_api_ref_col].isin(combined_bank_refs)
+#             | workpay_payouts[workpay_api_tid_col].isin(combined_bank_refs)
+#             # Substring match - bank refs contain workpay refs
+#             | workpay_payouts[workpay_api_ref_col].str.contains(
+#                 bank_refs_pattern,
+#                 case=False, na=False
+#             )
+#             | workpay_payouts[workpay_api_tid_col].str.contains(
+#                 bank_refs_pattern,
+#                 case=False, na=False
+#             ),
+#             RECONCILED,
+#             UNRECONCILED
+#         )
+#
+#         # Matching bank ref (unchanged)
+#         wp_refs = set(workpay_payouts[workpay_api_ref_col]) | set(workpay_payouts[workpay_api_tid_col])
+#         # Remove empty strings
+#         wp_refs = {ref for ref in wp_refs if ref}
+#
+#         wp_refs_pattern = "|".join(map(re.escape, wp_refs)) if wp_refs else "^$"
+#
+#         mpesa_debits[bank_remarks_col] = np.where(
+#             mpesa_debits[bank_reference_col].isin(wp_refs)
+#             | mpesa_debits[bank_details_col].str.contains(
+#                 wp_refs_pattern,
+#                 case=False, na=False
+#             ),
+#             RECONCILED,
+#             UNRECONCILED
+#         )
+#
+#         if mpesa_debits.empty or workpay_payouts.empty:
+#             raise ReconciliationException("Equity debits or workpay payouts is empty")
+#
+#         return mpesa_debits, workpay_payouts
+#     except Exception:
+#         raise
+
 
 
 def save_reconciled(db:Session, session_id:str):
