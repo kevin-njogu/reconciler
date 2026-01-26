@@ -18,34 +18,29 @@ router = APIRouter(prefix="/api/v1/transactions", tags=["Transactions"])
 
 
 def transaction_to_dict(txn: Transaction) -> dict:
-    """Convert Transaction model to response dict."""
-    # Determine the reconciliation note to display
-    recon_note = None
-    if txn.manual_recon_note:
-        recon_note = txn.manual_recon_note
-    elif txn.reconciliation_note:
-        recon_note = txn.reconciliation_note
+    """Convert Transaction model to response dict.
+
+    Returns only the essential columns:
+    - date: Transaction date
+    - reconciliation_key: Composite key for matching
+    - batch_id: Reconciliation batch identifier
+    - amount: Debit or credit amount (whichever is non-zero)
+    - reconciliation_status: reconciled/unreconciled
+    """
+    # Determine the amount (use debit if present, otherwise credit)
+    amount = None
+    if txn.debit and float(txn.debit) > 0:
+        amount = float(txn.debit)
+    elif txn.credit and float(txn.credit) > 0:
+        amount = float(txn.credit)
 
     return {
         "id": txn.id,
-        "gateway": txn.gateway,
-        "transaction_type": txn.transaction_type,
         "date": txn.date.isoformat() if txn.date else None,
-        "transaction_id": txn.transaction_id,
-        "narrative": txn.narrative,
-        "debit": float(txn.debit) if txn.debit else None,
-        "credit": float(txn.credit) if txn.credit else None,
-        "reconciliation_status": txn.reconciliation_status,
-        "reconciliation_note": recon_note,
         "reconciliation_key": txn.reconciliation_key,
         "batch_id": txn.batch_id,
-        "is_manually_reconciled": txn.is_manually_reconciled,
-        "manual_recon_by_username": (
-            txn.manual_reconciled_user.username
-            if txn.manual_reconciled_user else None
-        ),
-        "authorization_status": txn.authorization_status,
-        "created_at": txn.created_at.isoformat() if txn.created_at else None,
+        "amount": amount,
+        "reconciliation_status": txn.reconciliation_status,
     }
 
 

@@ -29,7 +29,7 @@ import {
   Alert,
   Select,
 } from '@/components/ui';
-import { formatDateTime, formatCurrency } from '@/lib/utils';
+import { formatDate, formatCurrency } from '@/lib/utils';
 
 export function TransactionsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -39,10 +39,8 @@ export function TransactionsPage() {
     page: parseInt(searchParams.get('page') || '1'),
     page_size: parseInt(searchParams.get('page_size') || '25'),
     search: searchParams.get('search') || '',
-    gateway: searchParams.get('gateway') || '',
     batch_id: searchParams.get('batch_id') || '',
     reconciliation_status: searchParams.get('reconciliation_status') || '',
-    transaction_type: searchParams.get('transaction_type') || '',
   });
 
   // Search input state (separate from filters to allow typing without immediate API calls)
@@ -79,10 +77,8 @@ export function TransactionsPage() {
     if (updated.page && updated.page > 1) params.page = String(updated.page);
     if (updated.page_size && updated.page_size !== 25) params.page_size = String(updated.page_size);
     if (updated.search) params.search = updated.search;
-    if (updated.gateway) params.gateway = updated.gateway;
     if (updated.batch_id) params.batch_id = updated.batch_id;
     if (updated.reconciliation_status) params.reconciliation_status = updated.reconciliation_status;
-    if (updated.transaction_type) params.transaction_type = updated.transaction_type;
     setSearchParams(params);
   };
 
@@ -99,10 +95,8 @@ export function TransactionsPage() {
       page: 1,
       page_size: 25,
       search: '',
-      gateway: '',
       batch_id: '',
       reconciliation_status: '',
-      transaction_type: '',
     });
     setSearchParams({});
   };
@@ -112,14 +106,6 @@ export function TransactionsPage() {
   const goToPage = (page: number) => updateFilters({ page });
 
   // Build filter options for selects
-  const gatewayOptions = [
-    { value: '', label: 'All Gateways' },
-    ...(filterOptions?.gateways.map((g) => ({
-      value: g,
-      label: g.charAt(0).toUpperCase() + g.slice(1).replace('_', ' '),
-    })) || []),
-  ];
-
   const batchOptions = [
     { value: '', label: 'All Batches' },
     ...(filterOptions?.batch_ids.map((b) => ({
@@ -136,14 +122,6 @@ export function TransactionsPage() {
     })) || []),
   ];
 
-  const typeOptions = [
-    { value: '', label: 'All Types' },
-    ...(filterOptions?.transaction_types.map((t) => ({
-      value: t,
-      label: t.charAt(0).toUpperCase() + t.slice(1),
-    })) || []),
-  ];
-
   const pageSizeOptions = [
     { value: '10', label: '10 per page' },
     { value: '25', label: '25 per page' },
@@ -154,10 +132,8 @@ export function TransactionsPage() {
   // Check if any filters are active
   const hasActiveFilters =
     filters.search ||
-    filters.gateway ||
     filters.batch_id ||
-    filters.reconciliation_status ||
-    filters.transaction_type;
+    filters.reconciliation_status;
 
   // Get badge variant based on status
   const getStatusBadge = (status: string | null) => {
@@ -169,23 +145,6 @@ export function TransactionsPage() {
         return <Badge variant="danger">Unreconciled</Badge>;
       default:
         return <Badge variant="info">{status}</Badge>;
-    }
-  };
-
-  // Get badge variant based on transaction type
-  const getTypeBadge = (type: string | null) => {
-    if (!type) return <Badge variant="info">-</Badge>;
-    switch (type.toLowerCase()) {
-      case 'debit':
-        return <Badge variant="danger">Debit</Badge>;
-      case 'credit':
-        return <Badge variant="success">Credit</Badge>;
-      case 'charge':
-        return <Badge variant="warning">Charge</Badge>;
-      case 'payout':
-        return <Badge variant="info">Payout</Badge>;
-      default:
-        return <Badge variant="info">{type}</Badge>;
     }
   };
 
@@ -235,13 +194,7 @@ export function TransactionsPage() {
             </form>
 
             {/* Filter Dropdowns */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Select
-                label="Gateway"
-                options={gatewayOptions}
-                value={filters.gateway || ''}
-                onChange={(e) => updateFilters({ gateway: e.target.value })}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Select
                 label="Batch"
                 options={batchOptions}
@@ -253,12 +206,6 @@ export function TransactionsPage() {
                 options={statusOptions}
                 value={filters.reconciliation_status || ''}
                 onChange={(e) => updateFilters({ reconciliation_status: e.target.value })}
-              />
-              <Select
-                label="Type"
-                options={typeOptions}
-                value={filters.transaction_type || ''}
-                onChange={(e) => updateFilters({ transaction_type: e.target.value })}
               />
             </div>
 
@@ -308,15 +255,10 @@ export function TransactionsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
-                    <TableHead>Reference</TableHead>
-                    <TableHead>Details</TableHead>
-                    <TableHead>Gateway</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Debit</TableHead>
-                    <TableHead className="text-right">Credit</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Note</TableHead>
+                    <TableHead>Reconciliation Key</TableHead>
                     <TableHead>Batch</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -327,45 +269,24 @@ export function TransactionsPage() {
                           ? 'No transactions match your filters'
                           : 'No transactions found'
                       }
-                      colSpan={10}
+                      colSpan={5}
                     />
                   ) : (
                     transactionsData.transactions.map((txn) => (
                       <TableRow key={txn.id}>
                         <TableCell className="text-gray-500 whitespace-nowrap">
-                          {txn.date ? formatDateTime(txn.date) : '-'}
+                          {txn.date ? formatDate(txn.date) : '-'}
                         </TableCell>
                         <TableCell>
-                          <span className="font-mono text-sm">{txn.transaction_id || '-'}</span>
-                        </TableCell>
-                        <TableCell
-                          className="max-w-xs truncate"
-                          title={txn.narrative || undefined}
-                        >
-                          {txn.narrative || '-'}
-                        </TableCell>
-                        <TableCell>
-                          <span className="capitalize">
-                            {txn.gateway?.replace('_', ' ') || '-'}
-                          </span>
-                        </TableCell>
-                        <TableCell>{getTypeBadge(txn.transaction_type)}</TableCell>
-                        <TableCell className="text-right font-mono">
-                          {txn.debit ? formatCurrency(txn.debit) : '-'}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {txn.credit ? formatCurrency(txn.credit) : '-'}
-                        </TableCell>
-                        <TableCell>{getStatusBadge(txn.reconciliation_status)}</TableCell>
-                        <TableCell
-                          className="max-w-[150px] truncate"
-                          title={txn.reconciliation_note || undefined}
-                        >
-                          {txn.reconciliation_note || '-'}
+                          <span className="font-mono text-sm">{txn.reconciliation_key || '-'}</span>
                         </TableCell>
                         <TableCell>
                           <span className="font-mono text-xs">{txn.batch_id || '-'}</span>
                         </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {txn.amount ? formatCurrency(txn.amount) : '-'}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(txn.reconciliation_status)}</TableCell>
                       </TableRow>
                     ))
                   )}

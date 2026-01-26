@@ -3,21 +3,11 @@ import { apiClient } from './client';
 // Types
 export interface TransactionRecord {
   id: number;
-  gateway: string;
-  transaction_type: string;
   date: string | null;
-  transaction_id: string | null;
-  narrative: string | null;
-  debit: number | null;
-  credit: number | null;
-  reconciliation_status: string | null;
-  reconciliation_note: string | null;
   reconciliation_key: string | null;
   batch_id: string;
-  is_manually_reconciled: string | null;
-  manual_recon_by_username: string | null;
-  authorization_status: string | null;
-  created_at: string | null;
+  amount: number | null;
+  reconciliation_status: string | null;
 }
 
 export interface TransactionPagination {
