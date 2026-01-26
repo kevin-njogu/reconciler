@@ -1,73 +1,237 @@
-from typing import Optional
-from fastapi import APIRouter, Depends, Query, HTTPException
+"""
+Reconciliation Controller.
+
+Provides endpoints for running reconciliation between external (bank)
+and internal (workpay) transaction files.
+"""
+import logging
+from typing import Optional, List
+
+from fastapi import APIRouter, Depends, Query, HTTPException, Path
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse
+
 from app.database.mysql_configs import get_database
-from app.database.redis_configs import get_current_redis_session_id
-from app.fileConfigs.EquityConfigs import EquityConfigs
-from app.reconciler.Reconciler import GatewayReconciler
-from app.fileConfigs.KcbConfigs import KcbConfigs
-from app.fileConfigs.MpesaConfigs import MpesaConfigs
-from app.fileConfigs.WorkpayConfigs import WorkpayEquityConfigs, WorkpayKcbConfigs, WorkpayMpesaConfigs
+from app.reconciler.Reconciler import Reconciler, get_available_gateways
+from app.exceptions.exceptions import ReconciliationException, DbOperationException
+from app.config.gateways import (
+    get_external_gateways,
+    get_charge_keywords,
+    get_gateways_info,
+    is_valid_external_gateway,
+)
+from app.auth.dependencies import require_active_user
+from app.sqlModels.authEntities import User
+
+logger = logging.getLogger("app.controller.reconcile")
 
 router = APIRouter(prefix='/api/v1', tags=['Reconciliation Endpoints'])
 
-db_session = Depends(get_database)
 
-# Mapping of gateway names to their configuration classes
-GATEWAY_CONFIGS = {
-    "equity": (EquityConfigs, WorkpayEquityConfigs),
-    "kcb": (KcbConfigs, WorkpayKcbConfigs),
-    "mpesa": (MpesaConfigs, WorkpayMpesaConfigs),
-}
+@router.get("/")
+async def root():
+    """Root endpoint for reconciliation API."""
+    return JSONResponse(content={"message": "Reconciliation API"}, status_code=200)
 
-@router.post("/reconcile/{gateway}")
-async def reconcile(
-    gateway: str,
-    db: Session = db_session,
-    session_id: Optional[str] = Query(default=None)
+
+@router.get("/gateways")
+async def list_gateways(
+    db: Session = Depends(get_database),
+    current_user: User = Depends(require_active_user)
 ):
     """
-    Reconcile transactions for the specified payment gateway.
-
-    This endpoint initiates the reconciliation process for a given gateway.
-    It selects the appropriate configuration classes based on the gateway,
-    initializes the `GatewayReconciler`, and saves the reconciliation results.
-
-    Args:
-        gateway (str): Name of the gateway to reconcile (e.g., "equity", "kcb", "mpesa").
-        db (Session, optional): SQLAlchemy database session.
-        session_id (str, optional): Specific reconciliation session ID.
-            If not provided, the current session ID from Redis is used.
+    List supported gateways for reconciliation and file uploads.
 
     Returns:
-        JSONResponse: A success message with HTTP status code 201.
+        - external_gateways: Gateway names for bank statements
+        - internal_gateways: Base internal gateway names
+        - upload_gateways: All valid gateway names for file uploads
+        - charge_keywords: Keywords used to identify charges per gateway
+    """
+    return JSONResponse(content=get_gateways_info(db), status_code=200)
 
-    Raises:
-        HTTPException
-            - 400 if the provided gateway is unsupported.
-            - 500 for any errors during the reconciliation process.
+
+@router.get("/reconcile/available-gateways/{batch_id}")
+async def get_batch_available_gateways(
+    batch_id: str = Path(..., description="Batch ID to check for available gateways"),
+    db: Session = Depends(get_database),
+    current_user: User = Depends(require_active_user)
+):
+    """
+    Get gateways that have files uploaded for a specific batch.
+
+    This endpoint checks which gateways have files uploaded and returns
+    their status for reconciliation readiness.
+
+    Args:
+        batch_id: The batch identifier to check.
+
+    Returns:
+        Dictionary with batch_id and list of available gateways with their file status.
+        Each gateway includes:
+        - gateway: Base gateway name (e.g., "equity")
+        - display_name: User-friendly gateway name
+        - has_external: Whether external file exists
+        - has_internal: Whether internal file exists
+        - external_file: External filename if present
+        - internal_file: Internal filename if present
+        - ready_for_reconciliation: Whether both files are present
     """
     try:
-        # Determine current session
-        curr_sess_id = get_current_redis_session_id().get("current_session_key")
-        session = session_id or curr_sess_id
+        available = get_available_gateways(batch_id, db_session=db)
 
-        gateway_lower = gateway.lower()
-        if gateway_lower not in GATEWAY_CONFIGS:
-            raise HTTPException(status_code=400, detail=f"Unsupported gateway '{gateway}'")
-
-        gateway_conf, workpay_conf = GATEWAY_CONFIGS[gateway_lower]
-
-        reconciler = GatewayReconciler(
-            session_id=session,
-            gateway_configs=gateway_conf,
-            workpay_configs=workpay_conf,
-            gateway_name=gateway_lower,
-            db_session=db
+        return JSONResponse(
+            content={
+                "batch_id": batch_id,
+                "available_gateways": available,
+            },
+            status_code=200
         )
-        reconciler.save_reconciled()
 
-        return JSONResponse(content="Reconciliation process completed", status_code=201)
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Error reconciling {gateway} gateway: {e}")
+        logger.error(
+            f"Error getting available gateways for batch {batch_id}",
+            exc_info=True,
+            extra={"batch_id": batch_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error checking available gateways: {str(e)}"
+        )
+
+
+@router.post("/reconcile")
+async def reconcile(
+    batch_id: str = Query(..., description="Batch ID containing the files to reconcile"),
+    gateway: str = Query(..., description="Gateway name to reconcile (e.g., equity, kcb, mpesa)"),
+    charge_keywords: Optional[List[str]] = Query(default=None, description="Keywords to identify charge transactions"),
+    db: Session = Depends(get_database),
+    current_user: User = Depends(require_active_user)
+):
+    """
+    Run reconciliation for a batch and gateway.
+
+    This endpoint validates files, performs reconciliation, and saves results to the database.
+    It's a single-step operation that replaces the old preview/save workflow.
+
+    Reconciliation Process:
+    1. Validates batch exists and is in pending status
+    2. Validates gateway directory exists with required files
+    3. Checks for existing reconciliation (prevents duplicates)
+    4. Loads and preprocesses files (fills nulls, normalizes data)
+    5. Generates reconciliation keys: {reference}|{amount}|{gateway}
+    6. Matches external debits against internal records
+    7. Saves all transactions to database with reconciliation status
+
+    Args:
+        batch_id: The batch containing uploaded files.
+        gateway: Gateway name (equity, kcb, mpesa).
+        charge_keywords: Optional keywords to identify charge transactions.
+
+    Returns:
+        Reconciliation result with summary and saved counts.
+
+    Raises:
+        HTTPException 400: If validation fails (batch, gateway, files).
+        HTTPException 409: If reconciliation already exists.
+        HTTPException 500: If processing error occurs.
+    """
+    try:
+        gateway_lower = gateway.lower().strip()
+
+        # Validate gateway exists in configuration
+        if not is_valid_external_gateway(gateway_lower, db):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported gateway '{gateway}'. Supported gateways: {get_external_gateways(db)}"
+            )
+
+        # Get charge keywords from config if not provided
+        keywords = charge_keywords or get_charge_keywords(gateway_lower, db)
+
+        # Create reconciler and run full process
+        reconciler = Reconciler(
+            batch_id=batch_id,
+            gateway=gateway_lower,
+            db_session=db,
+            charge_keywords=keywords
+        )
+
+        # Run validates, reconciles, and saves
+        result = reconciler.run()
+
+        logger.info(
+            f"Reconciliation completed successfully",
+            extra={
+                "batch_id": batch_id,
+                "gateway": gateway_lower,
+                "user": current_user.username,
+                "matched": result.get("summary", {}).get("matched", 0),
+            }
+        )
+
+        return JSONResponse(content=result, status_code=201)
+
+    except HTTPException:
+        raise
+    except ReconciliationException as e:
+        logger.warning(
+            f"Reconciliation validation failed: {str(e)}",
+            extra={"batch_id": batch_id, "gateway": gateway}
+        )
+        # Check if it's a "already exists" error
+        if "already exists" in str(e).lower():
+            raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except DbOperationException as e:
+        logger.error(
+            f"Database error during reconciliation",
+            exc_info=True,
+            extra={"batch_id": batch_id, "gateway": gateway, "error": str(e)}
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(
+            f"Unexpected error during reconciliation",
+            exc_info=True,
+            extra={"batch_id": batch_id, "gateway": gateway, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error reconciling {gateway} gateway: {str(e)}"
+        )
+
+
+# Backwards compatibility endpoint - deprecated
+@router.post("/reconcile/save")
+async def reconcile_and_save(
+    batch_id: str = Query(..., description="Batch ID containing the files to reconcile"),
+    external_gateway: str = Query(..., description="External gateway name (equity, kcb, mpesa)"),
+    internal_gateway: Optional[str] = Query(default=None, description="Internal gateway name (deprecated, ignored)"),
+    charge_keywords: Optional[List[str]] = Query(default=None, description="Keywords to identify charge transactions"),
+    db: Session = Depends(get_database),
+    current_user: User = Depends(require_active_user)
+):
+    """
+    Reconcile transactions and save results to database.
+
+    DEPRECATED: Use POST /reconcile instead. This endpoint is maintained
+    for backwards compatibility.
+
+    Args:
+        batch_id: The batch containing uploaded files.
+        external_gateway: External gateway name (equity, kcb, mpesa).
+        internal_gateway: Deprecated - ignored.
+        charge_keywords: Optional keywords to identify charge transactions.
+
+    Returns:
+        Dictionary with save counts and summary.
+    """
+    # Forward to new endpoint
+    return await reconcile(
+        batch_id=batch_id,
+        gateway=external_gateway,
+        charge_keywords=charge_keywords,
+        db=db,
+        current_user=current_user
+    )
