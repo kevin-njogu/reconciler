@@ -80,12 +80,20 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
         # Call the next handler
         response = await call_next(request)
 
-        # Only log successful operations (2xx status codes)
-        if 200 <= response.status_code < 300:
+        # Log all state-changing operations (success and failures)
+        # Success: 2xx status codes
+        # Client errors: 4xx (unauthorized, forbidden, bad request, etc.)
+        # Server errors: 5xx
+        is_success = 200 <= response.status_code < 300
+        is_client_error = 400 <= response.status_code < 500
+        is_server_error = 500 <= response.status_code < 600
+
+        if is_success or is_client_error or is_server_error:
             self._log_operation(
                 request=request,
                 user_id=user_id,
-                status_code=response.status_code
+                status_code=response.status_code,
+                is_failure=is_client_error or is_server_error
             )
 
         return response
@@ -94,7 +102,8 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
         self,
         request: Request,
         user_id: int = None,
-        status_code: int = None
+        status_code: int = None,
+        is_failure: bool = False
     ):
         """
         Create an audit log entry for the operation.
@@ -103,6 +112,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             request: The HTTP request.
             user_id: The authenticated user's ID (if available).
             status_code: The response status code.
+            is_failure: Whether this was a failed operation (4xx/5xx).
         """
         # Import here to avoid circular imports
         from app.sqlModels.authEntities import AuditLog
@@ -142,6 +152,11 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
         db = None
         try:
             db = SessionLocal()
+
+            # Add failure suffix to action if this was a failed operation
+            if is_failure:
+                action = f"{action}_failed"
+
             audit = AuditLog(
                 user_id=user_id,
                 action=action,
@@ -151,6 +166,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                     "status_code": status_code,
                     "query_params": dict(request.query_params),
                     "correlation_id": correlation_id,
+                    "is_failure": is_failure,
                 },
                 ip_address=request.client.host if request.client else None,
                 user_agent=request.headers.get("user-agent"),
@@ -160,8 +176,10 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             db.add(audit)
             db.commit()
 
-            logger.debug(
-                f"Audit logged: {action} by user_id={user_id}",
+            log_level = logging.WARNING if is_failure else logging.DEBUG
+            logger.log(
+                log_level,
+                f"Audit logged: {action} by user_id={user_id} (status={status_code})",
                 extra={
                     "correlation_id": correlation_id,
                     "user_id": user_id,
@@ -169,6 +187,7 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                     "resource_type": resource_type,
                     "resource_id": resource_id,
                     "path": path,
+                    "is_failure": is_failure,
                 }
             )
         except Exception as e:

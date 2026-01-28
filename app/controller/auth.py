@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from app.database.mysql_configs import get_database
+from app.middleware.security import limiter
 
 logger = logging.getLogger("app.auth")
 from app.auth.security import (
@@ -61,6 +62,7 @@ def log_audit(
 
 
 @router.post("/login", response_model=LoginResponse)
+@limiter.limit("5/minute")
 async def login(
     request: Request,
     login_request: LoginRequest,
@@ -68,6 +70,8 @@ async def login(
 ):
     """
     Authenticate user and return access/refresh tokens.
+
+    Rate limited to 5 attempts per minute per IP to prevent brute force attacks.
 
     Args:
         request: The HTTP request.
@@ -80,6 +84,7 @@ async def login(
     Raises:
         HTTPException 401: If credentials invalid.
         HTTPException 403: If account blocked/deactivated.
+        HTTPException 429: If rate limit exceeded.
     """
     # Find user by username
     stmt = select(User).where(User.username == login_request.username.lower().strip())
@@ -184,6 +189,7 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenRefreshResponse)
+@limiter.limit("10/minute")
 async def refresh_token(
     request: Request,
     refresh_request: TokenRefreshRequest,
@@ -191,6 +197,8 @@ async def refresh_token(
 ):
     """
     Refresh access token using a valid refresh token.
+
+    Rate limited to 10 attempts per minute per IP.
 
     Args:
         request: The HTTP request.
@@ -202,6 +210,7 @@ async def refresh_token(
 
     Raises:
         HTTPException 401: If refresh token invalid or expired.
+        HTTPException 429: If rate limit exceeded.
     """
     # Decode refresh token
     payload = decode_token(refresh_request.refresh_token)

@@ -12,6 +12,7 @@ from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.errors import RateLimitExceeded
 
 # Initialize logging FIRST - before any other imports that might use logging
 from app.customLogging import setup_logging
@@ -20,6 +21,11 @@ setup_logging()
 from app.config.settings import settings
 from app.customLogging.RequestLogger import RequestLoggingMiddleware
 from app.middleware.audit import AuditLogMiddleware
+from app.middleware.security import (
+    SecurityHeadersMiddleware,
+    limiter,
+    rate_limit_exceeded_handler,
+)
 from app.database.mysql_configs import Base, engine
 from app.exceptions.exceptions import MainException
 from app.exceptions.handlers import (
@@ -88,17 +94,23 @@ app = FastAPI(
     debug=settings.DEBUG,
 )
 
+# Attach rate limiter to app state
+app.state.limiter = limiter
+
 # ============================================================================
 # MIDDLEWARE STACK (order matters - executed in reverse order)
 # ============================================================================
+
+# Security headers middleware (adds HSTS, X-Frame-Options, etc.)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # CORS middleware - allow frontend to communicate with backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Correlation-ID"],
     expose_headers=["X-Correlation-ID"],
 )
 
@@ -119,6 +131,7 @@ app.add_middleware(
 # EXCEPTION HANDLERS
 # ============================================================================
 
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_exception_handler(MainException, main_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, global_exception_handler)

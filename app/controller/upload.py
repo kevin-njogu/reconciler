@@ -32,6 +32,7 @@ from app.auth.dependencies import require_active_user
 from app.sqlModels.authEntities import User
 from app.sqlModels.batchEntities import Batch, BatchFile, BatchStatus
 from app.config.gateways import is_valid_upload_gateway, get_all_upload_gateways
+from app.middleware.security import MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB
 
 logger = get_logger(__name__)
 
@@ -160,6 +161,18 @@ async def upload_file(
         # Read file content
         content = await file.read()
         file_size = len(content)
+
+        # Validate file size before processing
+        if file_size > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "error": "File too large",
+                    "file_size_mb": round(file_size / 1024 / 1024, 2),
+                    "max_size_mb": MAX_FILE_SIZE_MB,
+                    "message": f"File size ({file_size / 1024 / 1024:.1f}MB) exceeds maximum allowed size ({MAX_FILE_SIZE_MB}MB)"
+                }
+            )
 
         uploader = FileUpload(db)
 
@@ -396,6 +409,19 @@ async def validate_file_columns(
     """
     try:
         content = await file.read()
+        file_size = len(content)
+
+        # Validate file size before processing
+        if file_size > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "error": "File too large",
+                    "file_size_mb": round(file_size / 1024 / 1024, 2),
+                    "max_size_mb": MAX_FILE_SIZE_MB,
+                    "message": f"File size ({file_size / 1024 / 1024:.1f}MB) exceeds maximum allowed size ({MAX_FILE_SIZE_MB}MB)"
+                }
+            )
 
         uploader = FileUpload(db)
         uploader.validate_file(file)
