@@ -27,7 +27,7 @@ import {
 import { useToast } from '@/hooks/useToast';
 import { useIsSuperAdmin } from '@/stores';
 import { formatDateTime } from '@/lib/utils';
-import type { User, UserRole } from '@/types';
+import type { User, UserRole, UserCreateRequest } from '@/types';
 
 export function UsersPage() {
   const toast = useToast();
@@ -113,7 +113,7 @@ export function UsersPage() {
   });
 
   const handleCreateUser = () => {
-    const payload: Record<string, unknown> = {
+    const payload: UserCreateRequest = {
       first_name: newUser.first_name,
       last_name: newUser.last_name,
       email: newUser.email,
@@ -122,7 +122,7 @@ export function UsersPage() {
     if (newUser.mobile_number.trim()) {
       payload.mobile_number = newUser.mobile_number.trim();
     }
-    createUserMutation.mutate(payload as Parameters<typeof usersApi.create>[0]);
+    createUserMutation.mutate(payload);
   };
 
   const handleResetPassword = () => {

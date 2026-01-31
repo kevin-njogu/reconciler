@@ -48,16 +48,6 @@ export function ReportsPage() {
   const batches = batchesData?.batches || [];
   const availableGateways = gatewaysData?.gateways || [];
 
-  // Find selected batch details
-  const selectedBatchData = useMemo(() => {
-    return batches.find((b) => b.batch_id === selectedBatch);
-  }, [batches, selectedBatch]);
-
-  // Find selected gateway details
-  const selectedGatewayData = useMemo(() => {
-    return availableGateways.find((g) => g.gateway === selectedGateway);
-  }, [availableGateways, selectedGateway]);
-
   // Reset gateway when batch changes
   useEffect(() => {
     setSelectedGateway('');

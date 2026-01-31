@@ -9,7 +9,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Any
 
 import bcrypt
-from jose import jwt, JWTError
+import jwt
+from jwt.exceptions import InvalidTokenError
 
 from app.auth.config import auth_settings
 
@@ -195,7 +196,7 @@ def decode_token(token: str) -> Optional[dict[str, Any]]:
             algorithms=[auth_settings.jwt_algorithm]
         )
         return payload
-    except JWTError:
+    except InvalidTokenError:
         return None
 
 

@@ -38,7 +38,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [otpValue, setOtpValue] = useState('');
-  const [otpExpired, setOtpExpired] = useState(false);
+  const [_otpExpired, setOtpExpired] = useState(false);
 
   const from = location.state?.from?.pathname || '/';
 
