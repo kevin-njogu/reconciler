@@ -341,7 +341,7 @@ async def get_delete_requests(
 async def review_delete_request(
     request_id: int,
     request_body: ReviewDeleteRequestBody,
-    request: Request = None,
+    request: Request,
     db: Session = Depends(get_database),
     current_user: User = Depends(require_admin_only),
 ):
@@ -360,26 +360,31 @@ async def review_delete_request(
             rejection_reason=request_body.rejection_reason,
         )
 
-        # Audit log
-        audit_log = AuditLog(
-            user_id=current_user.id,
-            action="review_batch_delete_request",
-            resource_type="batch_delete_request",
-            resource_id=str(request_id),
-            details={
-                "request_id": request_id,
-                "action": result.get("action"),
-                "batch_id": result.get("batch_id"),
-                "transactions_deleted": result.get("transactions_deleted", 0),
-                "files_deleted": result.get("files_deleted", 0),
-            },
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("user-agent") if request else None,
-            request_path=request.url.path if request else None,
-            request_method="POST",
-        )
-        db.add(audit_log)
-        db.commit()
+        # Audit log - wrapped in try/except to not fail the operation if audit fails
+        # The deletion has already been committed, so we must return success
+        try:
+            audit_log = AuditLog(
+                user_id=current_user.id,
+                action="review_batch_delete_request",
+                resource_type="batch_delete_request",
+                resource_id=str(request_id),
+                details={
+                    "request_id": request_id,
+                    "action": result.get("action"),
+                    "batch_id": result.get("batch_id"),
+                    "transactions_deleted": result.get("transactions_deleted", 0),
+                    "files_deleted": result.get("files_deleted", 0),
+                },
+                ip_address=request.client.host if request.client else None,
+                user_agent=request.headers.get("user-agent"),
+                request_path=request.url.path,
+                request_method="POST",
+            )
+            db.add(audit_log)
+            db.commit()
+        except Exception as audit_error:
+            # Log audit failure but don't fail the operation - deletion already committed
+            log_exception(logger, "Failed to create audit log for delete request review", audit_error, request_id=request_id)
 
         return JSONResponse(content=result)
     except FileUploadException as e:

@@ -15,6 +15,7 @@ import os
 import sys
 from datetime import datetime
 from typing import Any, Dict
+from zoneinfo import ZoneInfo
 
 # Base directory for log files
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -70,7 +71,7 @@ class JsonFormatter(logging.Formatter):
         import json
 
         log_data = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(ZoneInfo("Africa/Nairobi")).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

@@ -63,7 +63,7 @@ class GatewayFile:
     Handles loading and processing transaction files for reconciliation.
 
     Uses a unified template format with columns:
-    - Date: Transaction date (YYYY-DD-MM)
+    - Date: Transaction date (YYYY-MM-DD)
     - Reference: Unique transaction identifier
     - Details: Transaction narration/description
     - Debit: Debit amount (outgoing)
@@ -180,7 +180,7 @@ class GatewayFile:
         return self.dataframe
 
     def _handle_date_column(self) -> None:
-        """Parse the Date column to datetime (expected format: YYYY-DD-MM)."""
+        """Parse the Date column to datetime (expected format: YYYY-MM-DD)."""
         if self.dataframe is None:
             raise ValueError("DataFrame not loaded.")
 
@@ -252,7 +252,7 @@ class GatewayFile:
         Fill null/empty values with defaults for reconciliation.
 
         Fills:
-        - Date: Current date in YYYY-DD-MM format
+        - Date: Current date in YYYY-MM-DD format
         - Reference: "NA"
         - Details: "NA"
         - Debit: 0
@@ -314,21 +314,24 @@ class GatewayFile:
         """
         Clean amount value for reconciliation key generation.
 
-        Converts to absolute whole number (no cents/decimals).
+        Converts to absolute whole number using standard rounding.
+        e.g., 1000.50+ -> 1001, 1000.49- -> 1000
 
         Args:
             amount: The amount value to clean.
 
         Returns:
-            Clean string amount for key generation.
+            Clean string amount for key generation (whole number only).
         """
         if pd.isna(amount):
             return "0"
 
         try:
-            # Convert to absolute value, then to integer (removes decimals)
+            # Convert to absolute value, then round to nearest whole number
+            # Standard rounding: .50+ rounds up, .49- rounds down
+            # e.g., 1000.50 -> 1001, 1000.49 -> 1000
             amount_float = abs(float(amount))
-            return str(int(amount_float))
+            return str(round(amount_float))
         except (ValueError, TypeError):
             return "0"
 
@@ -501,6 +504,25 @@ class GatewayFile:
             return self.dataframe.loc[mask_debits & ~mask_charges].copy()
         except Exception as e:
             raise FileOperationsException("Error extracting non-charge debit transactions") from e
+
+    def get_payouts(self) -> pd.DataFrame:
+        """
+        Get payout transactions (debits for internal records).
+
+        For internal records:
+        - Debits represent payouts (money going out to recipients)
+
+        Returns:
+            DataFrame with payout transactions.
+        """
+        try:
+            if self.dataframe is None:
+                self.normalize_data()
+
+            mask_debits = self.dataframe[DEBIT_COLUMN] > 0
+            return self.dataframe.loc[mask_debits].copy()
+        except Exception as e:
+            raise FileOperationsException("Error extracting payout transactions") from e
 
     def filter_by_narrative(self, keywords: List[str], include: bool = True) -> pd.DataFrame:
         """

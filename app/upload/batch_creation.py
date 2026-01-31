@@ -8,6 +8,7 @@ and cascade deletion.
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -31,7 +32,7 @@ class BatchService:
 
     def _generate_batch_id_string(self) -> str:
         """Generate a unique batch ID with timestamp and UUID."""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now(ZoneInfo("Africa/Nairobi")).strftime('%Y%m%d_%H%M%S')
         short_uuid = uuid.uuid4().hex[:8]
         return f"{timestamp}_{short_uuid}"
 
@@ -249,20 +250,23 @@ class BatchService:
 
         now = datetime.now(timezone.utc)
 
+        # Store batch_id before any deletions - the object may become detached after cascade delete
+        batch_id = delete_request.batch_id
+
         if approved:
             delete_request.status = DeleteRequestStatus.APPROVED.value
             delete_request.reviewed_by_id = reviewer_id
             delete_request.reviewed_at = now
             self.db.commit()
 
-            # Perform cascade deletion
-            stats = self._cascade_delete_batch(delete_request.batch_id)
+            # Perform cascade deletion - this will delete the delete_request record too
+            stats = self._cascade_delete_batch(batch_id)
             stats["request_id"] = request_id
             stats["action"] = "approved"
 
             log_operation(
                 logger, "approve_delete_request", success=True,
-                request_id=request_id, batch_id=delete_request.batch_id,
+                request_id=request_id, batch_id=batch_id,
                 reviewer_id=reviewer_id,
             )
             return stats
@@ -275,13 +279,13 @@ class BatchService:
 
             log_operation(
                 logger, "reject_delete_request", success=True,
-                request_id=request_id, batch_id=delete_request.batch_id,
+                request_id=request_id, batch_id=batch_id,
                 reviewer_id=reviewer_id,
             )
             return {
                 "request_id": request_id,
                 "action": "rejected",
-                "batch_id": delete_request.batch_id,
+                "batch_id": batch_id,
                 "rejection_reason": rejection_reason,
             }
 

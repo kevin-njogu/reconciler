@@ -22,22 +22,51 @@ class GatewayEnum(str, Enum):
     MPESA_INTERNAL = "mpesa_internal"
 
 
+class GatewayTypeEnum(str, Enum):
+    """Type of gateway - external (bank) or internal (workpay)."""
+    EXTERNAL = "external"
+    INTERNAL = "internal"
+
+
 class TransactionTypeEnum(str, Enum):
-    """Type of transaction."""
+    """
+    Type of transaction.
+
+    External transaction types:
+    - DEPOSIT: Credits/deposits into the account (auto-reconciled)
+    - DEBIT: Withdrawals/payments from the account (reconcilable)
+    - CHARGE: Bank fees/charges (auto-reconciled)
+
+    Internal transaction types:
+    - PAYOUT: Payments made to recipients (reconcilable)
+    - REFUND: Refunds processed (non-reconcilable)
+    """
     # External transaction types
-    CREDIT = "credit"
+    DEPOSIT = "deposit"  # Renamed from CREDIT
     DEBIT = "debit"
     CHARGE = "charge"
     # Internal transaction types
     PAYOUT = "payout"
     REFUND = "refund"
-    TOP_UP = "top_up"
 
 
 class ReconciliationStatusEnum(str, Enum):
     """Reconciliation status."""
     RECONCILED = "reconciled"
     UNRECONCILED = "unreconciled"
+
+
+class ReconciliationCategoryEnum(str, Enum):
+    """
+    Reconciliation category that determines how a transaction is processed.
+
+    RECONCILABLE: Transaction participates in matching (external debits, internal payouts)
+    AUTO_RECONCILED: Transaction is automatically marked as reconciled (deposits, charges)
+    NON_RECONCILABLE: Transaction is stored for record keeping (refunds)
+    """
+    RECONCILABLE = "reconcilable"
+    AUTO_RECONCILED = "auto_reconciled"
+    NON_RECONCILABLE = "non_reconcilable"
 
 
 class TransactionBase(BaseModel):
@@ -81,9 +110,19 @@ class TransactionCreate(BaseModel):
 
     Uses the unified template format with columns:
     - Date, Reference, Details, Debit, Credit
+
+    Enhanced discriminators:
+    - gateway_type: 'external' or 'internal'
+    - reconciliation_category: 'reconcilable', 'auto_reconciled', 'non_reconcilable'
     """
     gateway: str = Field(..., description="Gateway source (e.g., equity_external, equity_internal)")
-    transaction_type: str = Field(..., description="Type: credit, debit, charge, payout")
+    gateway_type: Optional[str] = Field(None, alias="gateway_type", description="Gateway type: external or internal")
+    transaction_type: str = Field(..., description="Type: deposit, debit, charge, payout, refund")
+    reconciliation_category: Optional[str] = Field(
+        None,
+        alias="reconciliation_category",
+        description="Category: reconcilable, auto_reconciled, non_reconcilable"
+    )
     date: Optional[datetime] = Field(None, alias="Date")
     transaction_id: Optional[str] = Field(None, alias="Reference")
     narrative: Optional[str] = Field(None, alias="Details")
@@ -105,7 +144,9 @@ class TransactionResponse(BaseModel):
     """Response model for transactions."""
     id: int
     gateway: str
+    gateway_type: Optional[str] = None
     transaction_type: str
+    reconciliation_category: Optional[str] = None
     date: Optional[datetime] = None
     transaction_id: Optional[str] = None
     narrative: Optional[str] = None

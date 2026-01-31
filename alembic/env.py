@@ -45,10 +45,7 @@ target_metadata = Base.metadata
 
 def get_url():
     """Get database URL from environment."""
-    running_in_docker = os.path.exists("/.dockerenv")
-    if running_in_docker:
-        return os.getenv("DATABASE_URL_DOCKER")
-    return os.getenv("DATABASE_URL_LOCAL", os.getenv("DATABASE_URL_DOCKER"))
+    return os.getenv("DATABASE_URL")
 
 
 def run_migrations_offline() -> None:

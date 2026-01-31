@@ -1,7 +1,7 @@
 import { apiClient } from './client';
 import type { BatchFilesResponse } from '@/types';
 
-// Response for single file upload
+// Response for single file upload (legacy/template mode)
 export interface FileUploadResponse {
   message: string;
   batch_id: string;
@@ -11,6 +11,17 @@ export interface FileUploadResponse {
   original_filename: string;
   file_size: number;
   uploaded_by: string;
+}
+
+// Response for transform upload (raw file transformation)
+export interface TransformUploadResponse extends FileUploadResponse {
+  transformation: {
+    success: boolean;
+    row_count: number;
+    column_mapping_used: Record<string, string>;
+    unmapped_columns: string[];
+    warnings: string[];
+  };
 }
 
 // Response for file validation
@@ -72,21 +83,28 @@ export const uploadApi = {
    * Upload a single file to a batch's gateway subdirectory.
    * File is renamed to {gateway_name}.{ext} and stored in:
    * {batch_id}/{external_gateway}/{gateway_name}.{ext}
+   *
+   * @param transform - If true, transforms raw file using gateway column mapping
    */
   uploadFile: async (
     batchId: string,
     gatewayName: string,
-    file: File
-  ): Promise<FileUploadResponse> => {
+    file: File,
+    transform: boolean = false
+  ): Promise<FileUploadResponse | TransformUploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await apiClient.post<FileUploadResponse>('/upload/file', formData, {
-      params: { batch_id: batchId, gateway_name: gatewayName },
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    const response = await apiClient.post<FileUploadResponse | TransformUploadResponse>(
+      '/upload/file',
+      formData,
+      {
+        params: { batch_id: batchId, gateway_name: gatewayName, transform },
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
     return response.data;
   },
 

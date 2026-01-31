@@ -1,7 +1,17 @@
 import { apiClient } from './client';
 import type {
   LoginRequest,
-  LoginResponse,
+  LoginStep1Response,
+  OTPVerifyRequest,
+  OTPVerifyResponse,
+  OTPResendRequest,
+  OTPResendResponse,
+  ForgotPasswordRequest,
+  ForgotPasswordResponse,
+  VerifyResetOTPRequest,
+  VerifyResetOTPResponse,
+  ResetPasswordRequest,
+  ResetPasswordResponse,
   TokenRefreshResponse,
   PasswordChangeRequest,
   User,
@@ -9,8 +19,39 @@ import type {
 } from '@/types';
 
 export const authApi = {
-  login: async (data: LoginRequest): Promise<LoginResponse> => {
-    const response = await apiClient.post<LoginResponse>('/auth/login', data);
+  // Step 1: Credentials verification → returns pre_auth_token + sends OTP
+  login: async (data: LoginRequest): Promise<LoginStep1Response> => {
+    const response = await apiClient.post<LoginStep1Response>('/auth/login', data);
+    return response.data;
+  },
+
+  // Step 2: OTP verification → returns access + refresh tokens
+  verifyOTP: async (data: OTPVerifyRequest): Promise<OTPVerifyResponse> => {
+    const response = await apiClient.post<OTPVerifyResponse>('/auth/verify-otp', data);
+    return response.data;
+  },
+
+  // Resend OTP (2-minute cooldown)
+  resendOTP: async (data: OTPResendRequest): Promise<OTPResendResponse> => {
+    const response = await apiClient.post<OTPResendResponse>('/auth/resend-otp', data);
+    return response.data;
+  },
+
+  // Forgot password - request OTP
+  forgotPassword: async (data: ForgotPasswordRequest): Promise<ForgotPasswordResponse> => {
+    const response = await apiClient.post<ForgotPasswordResponse>('/auth/forgot-password', data);
+    return response.data;
+  },
+
+  // Verify reset OTP → returns reset_token
+  verifyResetOTP: async (data: VerifyResetOTPRequest): Promise<VerifyResetOTPResponse> => {
+    const response = await apiClient.post<VerifyResetOTPResponse>('/auth/verify-reset-otp', data);
+    return response.data;
+  },
+
+  // Reset password with reset_token
+  resetPassword: async (data: ResetPasswordRequest): Promise<ResetPasswordResponse> => {
+    const response = await apiClient.post<ResetPasswordResponse>('/auth/reset-password', data);
     return response.data;
   },
 

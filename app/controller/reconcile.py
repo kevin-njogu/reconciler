@@ -100,6 +100,91 @@ async def get_batch_available_gateways(
         )
 
 
+@router.post("/reconcile/preview")
+async def reconcile_preview(
+    batch_id: str = Query(..., description="Batch ID containing the files to reconcile"),
+    gateway: str = Query(..., description="Gateway name to reconcile (e.g., equity, kcb, mpesa)"),
+    charge_keywords: Optional[List[str]] = Query(default=None, description="Keywords to identify charge transactions"),
+    db: Session = Depends(get_database),
+    current_user: User = Depends(require_active_user)
+):
+    """
+    Run reconciliation preview (dry run) without saving to database.
+
+    This allows users to review reconciliation insights before committing.
+    Results are NOT persisted - call POST /reconcile to save.
+
+    Returns insights including:
+    - Total transactions in external file
+    - Total transactions in internal file
+    - Match rate
+    - Unreconciled items count per file
+
+    Args:
+        batch_id: The batch containing uploaded files.
+        gateway: Gateway name (equity, kcb, mpesa).
+        charge_keywords: Optional keywords to identify charge transactions.
+
+    Returns:
+        Reconciliation preview with insights (not saved).
+    """
+    try:
+        gateway_lower = gateway.lower().strip()
+
+        # Validate gateway exists in configuration
+        if not is_valid_external_gateway(gateway_lower, db):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported gateway '{gateway}'. Supported gateways: {get_external_gateways(db)}"
+            )
+
+        # Get charge keywords from config if not provided
+        keywords = charge_keywords or get_charge_keywords(gateway_lower, db)
+
+        # Create reconciler and run preview (dry run)
+        reconciler = Reconciler(
+            batch_id=batch_id,
+            gateway=gateway_lower,
+            db_session=db,
+            charge_keywords=keywords,
+        )
+
+        # Run preview without saving
+        result = reconciler.preview()
+
+        logger.info(
+            f"Reconciliation preview completed",
+            extra={
+                "batch_id": batch_id,
+                "gateway": gateway_lower,
+                "user": current_user.username,
+                "matched": result.get("insights", {}).get("matched", 0),
+                "match_rate": result.get("insights", {}).get("match_rate", 0),
+            }
+        )
+
+        return JSONResponse(content=result, status_code=200)
+
+    except HTTPException:
+        raise
+    except ReconciliationException as e:
+        logger.warning(
+            f"Reconciliation preview validation failed: {str(e)}",
+            extra={"batch_id": batch_id, "gateway": gateway}
+        )
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(
+            f"Unexpected error during reconciliation preview",
+            exc_info=True,
+            extra={"batch_id": batch_id, "gateway": gateway, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error previewing reconciliation for {gateway}: {str(e)}"
+        )
+
+
 @router.post("/reconcile")
 async def reconcile(
     batch_id: str = Query(..., description="Batch ID containing the files to reconcile"),
@@ -154,7 +239,7 @@ async def reconcile(
             batch_id=batch_id,
             gateway=gateway_lower,
             db_session=db,
-            charge_keywords=keywords
+            charge_keywords=keywords,
         )
 
         # Run validates, reconciles, and saves

@@ -119,7 +119,7 @@ export function SearchableSelect({
           onClick={() => !disabled && setIsOpen(!isOpen)}
           disabled={disabled}
           className={cn(
-            'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left',
+            'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm text-left',
             'focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent',
             'disabled:bg-neutral-50 disabled:text-neutral-500 disabled:cursor-not-allowed',
             error ? 'border-danger-300' : 'border-neutral-300',

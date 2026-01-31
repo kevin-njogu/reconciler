@@ -24,12 +24,13 @@ interface NavItem {
   superAdminOnly?: boolean;  // Only for super_admin
   userOnly?: boolean;        // Only for user role (inputters)
   adminOnlyStrict?: boolean; // Only for admin (not super_admin)
+  excludeSuperAdmin?: boolean; // Hide from super_admin (operational items)
 }
 
 const navigation: NavItem[] = [
   // User (inputter) menus - available to all roles except where specified
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Batches', href: '/batches', icon: FolderOpen },
+  { name: 'Batches', href: '/batches', icon: FolderOpen, excludeSuperAdmin: true },
   { name: 'Upload Files', href: '/upload', icon: Upload, userOnly: true },
   { name: 'Reconciliation', href: '/reconciliation', icon: GitCompare, userOnly: true },
   { name: 'Manual Recon', href: '/operations', icon: Wrench, userOnly: true },
@@ -40,6 +41,7 @@ const navigation: NavItem[] = [
   // Admin (approver) menus - only for admin role (not super_admin)
   { name: 'Reconciliation Approvals', href: '/reconciliation-approvals', icon: ShieldCheck, adminOnlyStrict: true },
   { name: 'Gateway Approvals', href: '/gateway-approvals', icon: CheckSquare, adminOnlyStrict: true },
+  { name: 'System Settings', href: '/settings', icon: Cog },
   // Super Admin only menus
   { name: 'Users', href: '/users', icon: Users, superAdminOnly: true },
 ];
@@ -55,17 +57,18 @@ export function Sidebar() {
     if (item.adminOnly && !isAdmin) return false;
     if (item.adminOnlyStrict && !isAdminOnly) return false;
     if (item.userOnly && !isUserRole) return false;
+    if (item.excludeSuperAdmin && isSuperAdmin) return false;
     return true;
   });
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 w-64 bg-primary-900">
+    <aside className="fixed inset-y-0 left-0 z-40 w-64 bg-neutral-100 border-r border-neutral-200">
       <div className="flex h-full flex-col">
         {/* Logo */}
-        <div className="flex h-16 items-center justify-center border-b border-primary-800">
+        <div className="flex h-16 items-center justify-center border-b border-neutral-200">
           <div className="flex items-center gap-2">
             <Cog className="h-8 w-8 text-accent-300" />
-            <span className="text-xl font-bold text-white">ReconPay</span>
+            <span className="text-xl font-bold" style={{ color: '#205926' }}>Reconciler</span>
           </div>
         </div>
 
@@ -79,8 +82,8 @@ export function Sidebar() {
                 cn(
                   'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-primary-500 text-white'
-                    : 'text-primary-100 hover:bg-primary-800 hover:text-white'
+                    ? 'bg-primary-100 text-primary-600'
+                    : 'text-neutral-700 hover:bg-neutral-200 hover:text-primary-600'
                 )
               }
             >
@@ -91,8 +94,8 @@ export function Sidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-primary-800 p-4">
-          <p className="text-xs text-primary-400 text-center">
+        <div className="border-t border-neutral-200 p-4">
+          <p className="text-xs text-neutral-400 text-center">
             Payment Gateway Reconciliation
           </p>
         </div>

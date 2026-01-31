@@ -2,7 +2,15 @@
 File Upload Controller.
 
 Handles file uploads for reconciliation batches with gateway subdirectory
-organization. Files are stored in: {batch_id}/{external_gateway}/{gateway_name}.{ext}
+organization.
+
+Hybrid upload approach:
+- Legacy mode (transform=false): Validates template columns, stores as-is
+- Transform mode (transform=true): Uses gateway config to transform raw files
+
+Storage structure:
+- Raw files: {batch_id}/{external_gateway}/raw/{gateway_name}_raw.{ext}
+- Normalized: {batch_id}/{external_gateway}/{gateway_name}.csv
 
 Endpoints:
 - POST /file: Upload a file to a batch's gateway subdirectory
@@ -19,6 +27,7 @@ from typing import Optional
 from fastapi import APIRouter, UploadFile, Depends, File, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 from starlette.responses import JSONResponse
 from io import BytesIO
 
@@ -31,6 +40,7 @@ from app.upload.template_generator import TemplateGenerator, TemplateFormat, DEF
 from app.auth.dependencies import require_active_user
 from app.sqlModels.authEntities import User
 from app.sqlModels.batchEntities import Batch, BatchFile, BatchStatus
+from app.sqlModels.gatewayEntities import GatewayFileConfig
 from app.config.gateways import is_valid_upload_gateway, get_all_upload_gateways
 from app.middleware.security import MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB
 
@@ -130,7 +140,8 @@ async def get_pending_batches(
 async def upload_file(
     batch_id: str = Query(..., description="Batch ID to upload file to"),
     gateway_name: str = Query(..., description="Gateway name (e.g., 'equity', 'workpay_equity')"),
-    skip_validation: bool = Query(default=False, description="Skip column validation"),
+    skip_validation: bool = Query(default=False, description="Skip column validation (legacy mode only)"),
+    transform: bool = Query(default=False, description="Transform raw file using gateway column mapping"),
     file: UploadFile = File(...),
     db: Session = Depends(get_database),
     current_user: User = Depends(require_active_user)
@@ -138,11 +149,15 @@ async def upload_file(
     """
     Upload a file to a batch's gateway subdirectory.
 
-    The file is renamed to {gateway_name}.{ext} and stored in:
-    {batch_id}/{external_gateway}/{gateway_name}.{ext}
+    Two modes:
+    - **Legacy mode** (transform=false): Expects file with template columns.
+      Validates columns and stores as-is.
+    - **Transform mode** (transform=true): Accepts raw files from banks/systems.
+      Uses gateway column_mapping to transform and stores both raw and normalized files.
 
-    - External gateway 'equity' -> equity/equity.xlsx
-    - Internal gateway 'workpay_equity' -> equity/workpay_equity.xlsx
+    Storage structure (transform mode):
+    - Raw: {batch_id}/{gateway}/raw/{gateway_name}_raw.{ext}
+    - Normalized: {batch_id}/{gateway}/{gateway_name}.csv
 
     Max 2 files per gateway directory (one external, one internal).
     Uploading the same type replaces the existing file.
@@ -176,73 +191,18 @@ async def upload_file(
 
         uploader = FileUpload(db)
 
-        # Validate file columns unless skipped
-        validation_result = None
-        if not skip_validation:
-            found_columns, missing_columns = uploader.validate_file_columns(content, file.filename)
-            if missing_columns:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "error": "File is missing required columns",
-                        "missing_columns": missing_columns,
-                        "found_columns": found_columns,
-                        "required_columns": list(TEMPLATE_COLUMNS),
-                        "hint": "Download the template and ensure your file has all required columns."
-                    }
-                )
-            validation_result = {"found_columns": found_columns, "missing_columns": missing_columns}
-
-        # Reset file position for upload
-        await file.seek(0)
-
-        # Save file to gateway subdirectory
-        storage_filename, external_gateway, storage_path = await uploader.save_file(
-            file, validated_gateway, batch_id, content=content
-        )
-
-        # Remove any existing DB record for this slot (replacement)
-        existing_record = db.query(BatchFile).filter(
-            BatchFile.batch_id == batch_id,
-            BatchFile.gateway == external_gateway,
-            BatchFile.filename.like(f"{validated_gateway}.%"),
-        ).first()
-        if existing_record:
-            db.delete(existing_record)
-            db.flush()
-
-        # Track file in database
-        batch_service.add_file_record(
-            batch_id=batch_id,
-            filename=storage_filename,
-            original_filename=file.filename,
-            gateway=external_gateway,
-            file_size=file_size,
-            content_type=get_content_type(file.filename),
-            uploaded_by_id=current_user.id
-        )
-
-        response_content = {
-            "message": f"{storage_filename} uploaded successfully",
-            "batch_id": batch_id,
-            "gateway": external_gateway,
-            "upload_gateway": validated_gateway,
-            "filename": storage_filename,
-            "original_filename": file.filename,
-            "file_size": file_size,
-            "uploaded_by": current_user.username,
-        }
-
-        if validation_result:
-            response_content["validation"] = validation_result
-
-        log_operation(
-            logger, "upload_file", success=True,
-            batch_id=batch_id, gateway=external_gateway,
-            file_name=storage_filename, user=current_user.username,
-        )
-
-        return JSONResponse(content=response_content, status_code=201)
+        if transform:
+            # Transform mode - use gateway config to transform raw file
+            return await _handle_transform_upload(
+                uploader, file, validated_gateway, batch_id, content,
+                file_size, batch_service, current_user, db
+            )
+        else:
+            # Legacy mode - validate template columns and save as-is
+            return await _handle_legacy_upload(
+                uploader, file, validated_gateway, batch_id, content,
+                file_size, skip_validation, batch_service, current_user, db
+            )
 
     except HTTPException:
         raise
@@ -252,6 +212,173 @@ async def upload_file(
     except Exception as e:
         logger.error(f"Unexpected error during file upload: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+
+
+async def _handle_legacy_upload(
+    uploader: FileUpload,
+    file: UploadFile,
+    gateway_name: str,
+    batch_id: str,
+    content: bytes,
+    file_size: int,
+    skip_validation: bool,
+    batch_service: BatchService,
+    current_user: User,
+    db: Session,
+):
+    """Handle legacy upload mode (template validation)."""
+    # Validate file columns unless skipped
+    validation_result = None
+    if not skip_validation:
+        found_columns, missing_columns = uploader.validate_file_columns(content, file.filename)
+        if missing_columns:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "File is missing required columns",
+                    "missing_columns": missing_columns,
+                    "found_columns": found_columns,
+                    "required_columns": list(TEMPLATE_COLUMNS),
+                    "hint": "Download the template and ensure your file has all required columns, or use transform=true to auto-transform raw files."
+                }
+            )
+        validation_result = {"found_columns": found_columns, "missing_columns": missing_columns}
+
+    # Reset file position for upload
+    await file.seek(0)
+
+    # Save file to gateway subdirectory
+    storage_filename, external_gateway, storage_path = await uploader.save_file(
+        file, gateway_name, batch_id, content=content
+    )
+
+    # Remove any existing DB record for this slot (replacement)
+    existing_record = db.query(BatchFile).filter(
+        BatchFile.batch_id == batch_id,
+        BatchFile.gateway == external_gateway,
+        BatchFile.filename.like(f"{gateway_name}.%"),
+    ).first()
+    if existing_record:
+        db.delete(existing_record)
+        db.flush()
+
+    # Track file in database
+    batch_service.add_file_record(
+        batch_id=batch_id,
+        filename=storage_filename,
+        original_filename=file.filename,
+        gateway=external_gateway,
+        file_size=file_size,
+        content_type=get_content_type(file.filename),
+        uploaded_by_id=current_user.id
+    )
+
+    response_content = {
+        "message": f"{storage_filename} uploaded successfully",
+        "batch_id": batch_id,
+        "gateway": external_gateway,
+        "upload_gateway": gateway_name,
+        "filename": storage_filename,
+        "original_filename": file.filename,
+        "file_size": file_size,
+        "uploaded_by": current_user.username,
+        "mode": "legacy",
+    }
+
+    if validation_result:
+        response_content["validation"] = validation_result
+
+    log_operation(
+        logger, "upload_file", success=True,
+        batch_id=batch_id, gateway=external_gateway,
+        file_name=storage_filename, user=current_user.username,
+    )
+
+    return JSONResponse(content=response_content, status_code=201)
+
+
+async def _handle_transform_upload(
+    uploader: FileUpload,
+    file: UploadFile,
+    gateway_name: str,
+    batch_id: str,
+    content: bytes,
+    file_size: int,
+    batch_service: BatchService,
+    current_user: User,
+    db: Session,
+):
+    """Handle transform upload mode (raw file transformation)."""
+    # Get gateway file configuration
+    stmt = select(GatewayFileConfig).where(GatewayFileConfig.name == gateway_name)
+    gateway_config = db.execute(stmt).scalar_one_or_none()
+
+    if not gateway_config:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Gateway configuration not found for '{gateway_name}'. Configure column mapping in Gateway Settings first."
+        )
+
+    # Build config dict for transformer
+    config_dict = gateway_config.to_dict()
+
+    # Reset file position for upload
+    await file.seek(0)
+
+    # Transform and save
+    storage_filename, external_gateway, storage_path, transform_result = await uploader.transform_and_save(
+        file, gateway_name, batch_id, content, config_dict
+    )
+
+    # Remove any existing DB record for this slot (replacement)
+    existing_record = db.query(BatchFile).filter(
+        BatchFile.batch_id == batch_id,
+        BatchFile.gateway == external_gateway,
+        BatchFile.filename.like(f"{gateway_name}.%"),
+    ).first()
+    if existing_record:
+        db.delete(existing_record)
+        db.flush()
+
+    # Track normalized file in database
+    batch_service.add_file_record(
+        batch_id=batch_id,
+        filename=storage_filename,
+        original_filename=file.filename,
+        gateway=external_gateway,
+        file_size=len(transform_result.normalized_data) if transform_result.normalized_data else 0,
+        content_type="text/csv",
+        uploaded_by_id=current_user.id
+    )
+
+    response_content = {
+        "message": f"File transformed and saved as {storage_filename}",
+        "batch_id": batch_id,
+        "gateway": external_gateway,
+        "upload_gateway": gateway_name,
+        "filename": storage_filename,
+        "original_filename": file.filename,
+        "original_file_size": file_size,
+        "normalized_file_size": len(transform_result.normalized_data) if transform_result.normalized_data else 0,
+        "uploaded_by": current_user.username,
+        "mode": "transform",
+        "transformation": {
+            "success": transform_result.success,
+            "row_count": transform_result.row_count,
+            "column_mapping_used": transform_result.column_mapping_used,
+            "unmapped_columns": transform_result.unmapped_columns,
+            "warnings": transform_result.warnings,
+        }
+    }
+
+    log_operation(
+        logger, "upload_file_transform", success=True,
+        batch_id=batch_id, gateway=external_gateway,
+        file_name=storage_filename, user=current_user.username,
+        rows=transform_result.row_count,
+    )
+
+    return JSONResponse(content=response_content, status_code=201)
 
 
 @router.delete("/file")
@@ -456,7 +583,7 @@ async def download_template(
     Download upload template.
 
     Template columns: Date, Reference, Details, Debit, Credit
-    The Date column row 1 contains the current date in YYYY-DD-MM format as guidance.
+    The Date column row 1 contains the current date in YYYY-MM-DD format as guidance.
     The same template is used for all gateways.
     """
     try:

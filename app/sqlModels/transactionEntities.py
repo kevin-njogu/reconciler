@@ -23,22 +23,51 @@ class Gateway(PyEnum):
     MPESA_INTERNAL = "mpesa_internal"
 
 
+class GatewayType(PyEnum):
+    """Type of gateway - external (bank) or internal (workpay)."""
+    EXTERNAL = "external"
+    INTERNAL = "internal"
+
+
 class TransactionType(PyEnum):
-    """Type of transaction."""
+    """
+    Type of transaction.
+
+    External transaction types:
+    - DEPOSIT: Credits/deposits into the account (auto-reconciled)
+    - DEBIT: Withdrawals/payments from the account (reconcilable against internal payouts)
+    - CHARGE: Bank fees/charges (auto-reconciled)
+
+    Internal transaction types:
+    - PAYOUT: Payments made to recipients (reconcilable against external debits)
+    - REFUND: Refunds processed (non-reconcilable)
+    """
     # External transaction types
-    CREDIT = "credit"
+    DEPOSIT = "deposit"  # Renamed from CREDIT for clarity
     DEBIT = "debit"
     CHARGE = "charge"
     # Internal transaction types
     PAYOUT = "payout"
     REFUND = "refund"
-    TOP_UP = "top_up"
 
 
 class ReconciliationStatus(PyEnum):
     """Reconciliation status."""
     RECONCILED = "reconciled"
     UNRECONCILED = "unreconciled"
+
+
+class ReconciliationCategory(PyEnum):
+    """
+    Reconciliation category that determines how a transaction is processed.
+
+    RECONCILABLE: Transaction participates in matching (external debits vs internal payouts)
+    AUTO_RECONCILED: Transaction is automatically marked as reconciled (deposits, charges)
+    NON_RECONCILABLE: Transaction is stored for record keeping but doesn't participate in matching
+    """
+    RECONCILABLE = "reconcilable"
+    AUTO_RECONCILED = "auto_reconciled"
+    NON_RECONCILABLE = "non_reconcilable"
 
 
 class AuthorizationStatus(PyEnum):
@@ -56,21 +85,28 @@ class Transaction(Base):
     - Date, Reference, Details, Debit, Credit
 
     The `gateway` column acts as a discriminator to identify the source:
-    - External gateways: equity, kcb, mpesa (bank statements)
-    - Internal gateways: workpay_equity, workpay_kcb, workpay_mpesa (internal records)
+    - External gateways: equity_external, kcb_external, mpesa_external (bank statements)
+    - Internal gateways: equity_internal, kcb_internal, mpesa_internal (internal records)
 
-    The `transaction_type` column identifies the nature of the transaction:
-    - credit, debit, charge, payout
+    Enhanced discriminators:
+    - `gateway_type`: 'external' or 'internal' - identifies source type
+    - `transaction_type`: nature of transaction (deposit, debit, charge, payout, etc.)
+    - `reconciliation_category`: determines reconciliation behavior
+        - 'reconcilable': participates in matching (external debits, internal payouts)
+        - 'auto_reconciled': automatically reconciled (deposits, charges)
+        - 'non_reconcilable': stored for record keeping (refunds)
     """
     __tablename__ = "transactions"
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # Discriminator column
+    # Discriminator columns
     gateway = Column(String(50), nullable=False, index=True)
+    gateway_type = Column(String(20), nullable=True, index=True)  # external, internal
 
-    # Transaction type
+    # Transaction type and reconciliation category
     transaction_type = Column(String(50), nullable=False, index=True)
+    reconciliation_category = Column(String(30), nullable=True, index=True)  # reconcilable, auto_reconciled, non_reconcilable
 
     # Common columns (from unified template: Date, Reference, Details, Debit, Credit)
     date = Column(DateTime, nullable=True)
@@ -119,6 +155,8 @@ class Transaction(Base):
         Index('ix_recon_status_batch', 'reconciliation_status', 'batch_id'),
         Index('ix_auth_status_batch', 'authorization_status', 'batch_id'),
         Index('ix_recon_key_batch', 'reconciliation_key', 'batch_id'),
+        Index('ix_recon_category_batch', 'reconciliation_category', 'batch_id'),
+        Index('ix_gateway_type_category', 'gateway_type', 'reconciliation_category', 'batch_id'),
     )
 
     def __repr__(self):
@@ -146,3 +184,51 @@ class Transaction(Base):
         elif gateway_lower.endswith("_internal"):
             return gateway_lower.replace("_internal", "")
         return gateway_lower
+
+    @classmethod
+    def get_gateway_type(cls, gateway: str) -> str:
+        """
+        Get gateway type from gateway identifier.
+
+        Args:
+            gateway: Full gateway identifier (e.g., "equity_external")
+
+        Returns:
+            'external' or 'internal'
+        """
+        if cls.is_external(gateway):
+            return GatewayType.EXTERNAL.value
+        return GatewayType.INTERNAL.value
+
+    @classmethod
+    def get_reconciliation_category(cls, transaction_type: str) -> str:
+        """
+        Determine reconciliation category based on transaction type.
+
+        Categories:
+        - RECONCILABLE: DEBIT (external), PAYOUT (internal)
+        - AUTO_RECONCILED: DEPOSIT (external), CHARGE (external)
+        - NON_RECONCILABLE: REFUND (internal)
+
+        Args:
+            transaction_type: Transaction type value
+
+        Returns:
+            Reconciliation category value
+        """
+        type_lower = transaction_type.lower()
+
+        # Reconcilable transactions participate in matching
+        if type_lower in [TransactionType.DEBIT.value, TransactionType.PAYOUT.value]:
+            return ReconciliationCategory.RECONCILABLE.value
+
+        # Auto-reconciled transactions are automatically marked as reconciled
+        if type_lower in [TransactionType.DEPOSIT.value, TransactionType.CHARGE.value]:
+            return ReconciliationCategory.AUTO_RECONCILED.value
+
+        # Non-reconcilable transactions are stored for record keeping
+        if type_lower == TransactionType.REFUND.value:
+            return ReconciliationCategory.NON_RECONCILABLE.value
+
+        # Default to reconcilable for unknown types
+        return ReconciliationCategory.RECONCILABLE.value

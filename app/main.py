@@ -19,6 +19,7 @@ from app.customLogging import setup_logging
 setup_logging()
 
 from app.config.settings import settings
+from app.auth.config import validate_auth_config
 from app.customLogging.RequestLogger import RequestLoggingMiddleware
 from app.middleware.audit import AuditLogMiddleware
 from app.middleware.security import (
@@ -26,7 +27,7 @@ from app.middleware.security import (
     limiter,
     rate_limit_exceeded_handler,
 )
-from app.database.mysql_configs import Base, engine
+from app.database.mysql_configs import Base, engine, dispose_engine
 from app.exceptions.exceptions import MainException
 from app.exceptions.handlers import (
     main_exception_handler,
@@ -44,13 +45,15 @@ from app.controller import (
     transactions,
     auth,
     users,
+    settings as settings_controller,
 )
 
 # Import models for table creation (SQLAlchemy needs these imported to create tables)
 from app.sqlModels.batchEntities import Batch, BatchDeleteRequest  # noqa: F401
 from app.sqlModels.transactionEntities import Transaction  # noqa: F401
-from app.sqlModels.gatewayEntities import GatewayConfig  # noqa: F401
+from app.sqlModels.gatewayEntities import GatewayConfig, Gateway, GatewayFileConfig, GatewayChangeRequest  # noqa: F401
 from app.sqlModels.authEntities import User, RefreshToken, AuditLog  # noqa: F401
+from app.sqlModels.settingsEntities import DateFormat, Country, Currency, ReconciliationKeyword, SystemSetting  # noqa: F401
 
 logger = logging.getLogger("app")
 
@@ -72,6 +75,10 @@ async def lifespan(app: FastAPI):
         }
     )
 
+    # Validate critical configuration
+    validate_auth_config()
+    logger.info("Auth configuration validated successfully")
+
     # Create database tables
     try:
         Base.metadata.create_all(engine)
@@ -84,7 +91,13 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info(f"Shutting down {settings.APP_NAME}")
+    dispose_engine()
 
+
+# Disable OpenAPI docs in production
+_docs_url = "/docs" if not settings.is_production else None
+_redoc_url = "/redoc" if not settings.is_production else None
+_openapi_url = "/openapi.json" if not settings.is_production else None
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -92,6 +105,9 @@ app = FastAPI(
     version=settings.APP_VERSION,
     lifespan=lifespan,
     debug=settings.DEBUG,
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
+    openapi_url=_openapi_url,
 )
 
 # Attach rate limiter to app state
@@ -150,6 +166,7 @@ app.include_router(gateway_config.router)
 app.include_router(operations.router)
 app.include_router(dashboard.router)
 app.include_router(transactions.router)
+app.include_router(settings_controller.router)
 
 
 # ============================================================================

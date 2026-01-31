@@ -10,3 +10,5 @@ export { Alert } from './Alert';
 export { Spinner, Loading, PageLoading } from './Spinner';
 export { FileUpload } from './FileUpload';
 export { Pagination, CompactPagination } from './Pagination';
+export { PasswordInput } from './PasswordInput';
+export { ErrorBoundary } from './ErrorBoundary';

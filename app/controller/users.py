@@ -2,27 +2,33 @@
 User Management API Endpoints.
 
 Provides user CRUD operations for administrators.
+Passwords are auto-generated and sent via welcome email.
 """
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from app.database.mysql_configs import get_database
-from app.auth.security import hash_password
+from app.auth.security import hash_password, generate_secure_password
 from app.auth.config import auth_settings
 from app.auth.dependencies import require_admin, require_super_admin, get_current_user
-from app.sqlModels.authEntities import User, RefreshToken, UserRole, UserStatus, AuditLog
+from app.sqlModels.authEntities import User, RefreshToken, LoginSession, UserRole, UserStatus, AuditLog, OTPPurpose
+from app.services.otp_service import OTPService
+from app.services.email_service import EmailService
 from app.pydanticModels.authModels import (
     SuperAdminCreateRequest,
     UserCreateRequest,
+    UserCreateResponse,
     UserUpdateRequest,
     UserResponse,
     UserListResponse,
-    PasswordResetRequest,
 )
+
+logger = logging.getLogger("app.users")
 
 router = APIRouter(prefix='/api/v1/users', tags=['User Management'])
 
@@ -60,27 +66,14 @@ async def create_super_admin(
     """
     Create the first super admin user.
 
-    This endpoint only works if:
-    1. No super admin exists in the system
-    2. The correct secret key is provided
-
-    Args:
-        request: The HTTP request.
-        create_request: Super admin creation details with secret key.
-        db: Database session.
-
-    Returns:
-        Created super admin user.
-
-    Raises:
-        HTTPException 400: If super admin exists or secret invalid.
+    This endpoint only works if no super admin exists and the correct
+    secret key is provided.
     """
     # Verify secret key
     if create_request.secret_key != auth_settings.super_admin_secret:
         log_audit(
             db, "super_admin_creation_failed", None, "user", None,
-            {"reason": "invalid_secret"},
-            request
+            {"reason": "invalid_secret"}, request
         )
         db.commit()
         raise HTTPException(status_code=400, detail="Invalid secret key")
@@ -95,7 +88,7 @@ async def create_super_admin(
             detail="Super admin already exists. Contact existing super admin for access."
         )
 
-    # Check email uniqueness (also check username since username = email)
+    # Check email uniqueness
     stmt = select(User).where(
         (User.email == create_request.email) | (User.username == create_request.email)
     )
@@ -106,17 +99,18 @@ async def create_super_admin(
 
     # Create super admin with email as username
     user = User(
-        username=create_request.email,  # Use email as username
+        username=create_request.email,
         email=create_request.email,
         first_name=create_request.first_name,
         last_name=create_request.last_name,
         hashed_password=hash_password(create_request.password),
         role=UserRole.SUPER_ADMIN.value,
         status=UserStatus.ACTIVE.value,
-        must_change_password=False,  # Super admin doesn't need to change password
+        must_change_password=False,
+        password_changed_at=datetime.now(timezone.utc),
     )
     db.add(user)
-    db.flush()  # Get the ID
+    db.flush()
 
     log_audit(
         db, "super_admin_created", user.id, "user", str(user.id),
@@ -129,31 +123,21 @@ async def create_super_admin(
     return UserResponse.model_validate(user)
 
 
-@router.post("", response_model=UserResponse, status_code=201)
+@router.post("", response_model=UserCreateResponse, status_code=201)
 async def create_user(
     request: Request,
     create_request: UserCreateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_database),
     current_user: User = Depends(require_super_admin)
 ):
     """
     Create a new user (super admin only).
 
-    The username is automatically set to the user's email address.
-
-    Args:
-        request: The HTTP request.
-        create_request: User creation details (first_name, last_name, email, password, role).
-        db: Database session.
-        current_user: The authenticated super admin user.
-
-    Returns:
-        Created user.
-
-    Raises:
-        HTTPException 400: If email already exists.
+    Password is auto-generated and sent via welcome email along with
+    a verification OTP code. The user must change their password on first login.
     """
-    # Check email uniqueness (also checks username since username = email)
+    # Check email uniqueness
     stmt = select(User).where(
         (User.email == create_request.email) | (User.username == create_request.email)
     )
@@ -162,20 +146,36 @@ async def create_user(
     if existing:
         raise HTTPException(status_code=400, detail="Email already exists")
 
+    # Auto-generate password
+    initial_password = generate_secure_password()
+
     # Create user with email as username
     user = User(
-        username=create_request.email,  # Use email as username
+        username=create_request.email,
         email=create_request.email,
         first_name=create_request.first_name,
         last_name=create_request.last_name,
-        hashed_password=hash_password(create_request.password),
+        mobile_number=create_request.mobile_number,
+        hashed_password=hash_password(initial_password),
         role=create_request.role.value,
         status=UserStatus.ACTIVE.value,
-        must_change_password=True,  # New users must change password
+        must_change_password=True,
         created_by_id=current_user.id,
     )
     db.add(user)
     db.flush()
+
+    # Generate welcome OTP (5-minute lifetime)
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
+    plain_otp, _ = OTPService.create_otp(db, user.id, OTPPurpose.WELCOME.value, ip, ua)
+
+    # Send welcome email in background
+    lifetime = OTPService.get_lifetime_seconds(OTPPurpose.WELCOME.value)
+    background_tasks.add_task(
+        EmailService.send_welcome_email,
+        user.email, user.email, initial_password, plain_otp, user.full_name, lifetime
+    )
 
     log_audit(
         db, "user_created", current_user.id, "user", str(user.id),
@@ -184,14 +184,20 @@ async def create_user(
             "first_name": user.first_name,
             "last_name": user.last_name,
             "role": user.role,
-            "created_by": current_user.username
+            "mobile_number": user.mobile_number,
+            "created_by": current_user.username,
         },
         request
     )
     db.commit()
     db.refresh(user)
 
-    return UserResponse.model_validate(user)
+    return UserCreateResponse(
+        user=UserResponse.model_validate(user),
+        initial_password=initial_password,
+        welcome_email_sent=True,
+        message=f"User created successfully. Welcome email is being sent to {user.email}.",
+    )
 
 
 @router.get("", response_model=UserListResponse)
@@ -201,18 +207,7 @@ async def list_users(
     db: Session = Depends(get_database),
     current_user: User = Depends(require_admin)
 ):
-    """
-    List all users (admin only).
-
-    Args:
-        role: Optional filter by role.
-        status: Optional filter by status.
-        db: Database session.
-        current_user: The authenticated admin user.
-
-    Returns:
-        List of users.
-    """
+    """List all users (admin only)."""
     conditions = []
 
     if role:
@@ -250,20 +245,7 @@ async def get_user(
     db: Session = Depends(get_database),
     current_user: User = Depends(require_admin)
 ):
-    """
-    Get user details by ID (admin only).
-
-    Args:
-        user_id: User ID to retrieve.
-        db: Database session.
-        current_user: The authenticated admin user.
-
-    Returns:
-        User details.
-
-    Raises:
-        HTTPException 404: If user not found.
-    """
+    """Get user details by ID (admin only)."""
     stmt = select(User).where(User.id == user_id)
     user = db.execute(stmt).scalar_one_or_none()
 
@@ -281,23 +263,7 @@ async def update_user(
     db: Session = Depends(get_database),
     current_user: User = Depends(require_admin)
 ):
-    """
-    Update user details (admin only).
-
-    Args:
-        user_id: User ID to update.
-        request: The HTTP request.
-        update_request: Fields to update.
-        db: Database session.
-        current_user: The authenticated admin user.
-
-    Returns:
-        Updated user.
-
-    Raises:
-        HTTPException 404: If user not found.
-        HTTPException 403: If insufficient permissions.
-    """
+    """Update user details (admin only)."""
     stmt = select(User).where(User.id == user_id)
     user = db.execute(stmt).scalar_one_or_none()
 
@@ -318,7 +284,7 @@ async def update_user(
     changes = {}
 
     if update_request.email is not None and update_request.email != user.email:
-        # Check email uniqueness (also check username since username = email)
+        # Check email uniqueness
         stmt = select(User).where(
             ((User.email == update_request.email) | (User.username == update_request.email)),
             User.id != user_id
@@ -327,7 +293,11 @@ async def update_user(
             raise HTTPException(status_code=400, detail="Email already in use")
         changes["email"] = {"old": user.email, "new": update_request.email}
         user.email = update_request.email
-        user.username = update_request.email  # Keep username in sync with email
+        user.username = update_request.email
+
+    if update_request.mobile_number is not None and update_request.mobile_number != user.mobile_number:
+        changes["mobile_number"] = {"old": user.mobile_number, "new": update_request.mobile_number}
+        user.mobile_number = update_request.mobile_number
 
     if update_request.role is not None and update_request.role.value != user.role:
         changes["role"] = {"old": user.role, "new": update_request.role.value}
@@ -352,22 +322,7 @@ async def block_user(
     db: Session = Depends(get_database),
     current_user: User = Depends(require_admin)
 ):
-    """
-    Block a user account (admin only).
-
-    Args:
-        user_id: User ID to block.
-        request: The HTTP request.
-        db: Database session.
-        current_user: The authenticated admin user.
-
-    Returns:
-        Success message.
-
-    Raises:
-        HTTPException 404: If user not found.
-        HTTPException 400: If trying to block self or super admin.
-    """
+    """Block a user account (admin only)."""
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot block your own account")
 
@@ -377,12 +332,10 @@ async def block_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Only super admin can block other admins
     if user.role in [UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value]:
         if current_user.role != UserRole.SUPER_ADMIN.value:
             raise HTTPException(status_code=403, detail="Only super admin can block admin users")
 
-    # Cannot block super admin
     if user.role == UserRole.SUPER_ADMIN.value:
         raise HTTPException(status_code=400, detail="Cannot block a super admin")
 
@@ -397,6 +350,12 @@ async def block_user(
     for token in tokens:
         token.revoked = True
         token.revoked_at = datetime.now(timezone.utc)
+
+    # Invalidate login sessions
+    db.query(LoginSession).filter(
+        LoginSession.user_id == user_id,
+        LoginSession.is_active == True,
+    ).update({"is_active": False, "logged_out_at": datetime.now(timezone.utc)})
 
     log_audit(
         db, "user_blocked", current_user.id, "user", str(user.id),
@@ -415,22 +374,7 @@ async def unblock_user(
     db: Session = Depends(get_database),
     current_user: User = Depends(require_admin)
 ):
-    """
-    Unblock a user account (admin only).
-
-    Args:
-        user_id: User ID to unblock.
-        request: The HTTP request.
-        db: Database session.
-        current_user: The authenticated admin user.
-
-    Returns:
-        Success message.
-
-    Raises:
-        HTTPException 404: If user not found.
-        HTTPException 400: If user not blocked.
-    """
+    """Unblock a user account (admin only)."""
     stmt = select(User).where(User.id == user_id)
     user = db.execute(stmt).scalar_one_or_none()
 
@@ -440,12 +384,14 @@ async def unblock_user(
     if user.status != UserStatus.BLOCKED.value:
         raise HTTPException(status_code=400, detail="User is not blocked")
 
-    # Only super admin can unblock admin users
     if user.role in [UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value]:
         if current_user.role != UserRole.SUPER_ADMIN.value:
             raise HTTPException(status_code=403, detail="Only super admin can unblock admin users")
 
     user.status = UserStatus.ACTIVE.value
+    # Clear any lockout as well
+    user.failed_login_attempts = 0
+    user.locked_until = None
 
     log_audit(
         db, "user_unblocked", current_user.id, "user", str(user.id),
@@ -464,22 +410,7 @@ async def deactivate_user(
     db: Session = Depends(get_database),
     current_user: User = Depends(require_super_admin)
 ):
-    """
-    Permanently deactivate a user account (super admin only).
-
-    Args:
-        user_id: User ID to deactivate.
-        request: The HTTP request.
-        db: Database session.
-        current_user: The authenticated super admin user.
-
-    Returns:
-        Success message.
-
-    Raises:
-        HTTPException 404: If user not found.
-        HTTPException 400: If trying to deactivate self or another super admin.
-    """
+    """Permanently deactivate a user account (super admin only)."""
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
 
@@ -504,6 +435,12 @@ async def deactivate_user(
         token.revoked = True
         token.revoked_at = datetime.now(timezone.utc)
 
+    # Invalidate login sessions
+    db.query(LoginSession).filter(
+        LoginSession.user_id == user_id,
+        LoginSession.is_active == True,
+    ).update({"is_active": False, "logged_out_at": datetime.now(timezone.utc)})
+
     log_audit(
         db, "user_deactivated", current_user.id, "user", str(user.id),
         {"deactivated_by": current_user.username},
@@ -518,28 +455,15 @@ async def deactivate_user(
 async def reset_user_password(
     user_id: int,
     request: Request,
-    reset_request: PasswordResetRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_database),
     current_user: User = Depends(require_admin)
 ):
     """
     Reset a user's password (admin only).
 
+    Auto-generates a new password and sends it via email.
     The user will be required to change their password on next login.
-
-    Args:
-        user_id: User ID whose password to reset.
-        request: The HTTP request.
-        reset_request: New password.
-        db: Database session.
-        current_user: The authenticated admin user.
-
-    Returns:
-        Success message.
-
-    Raises:
-        HTTPException 404: If user not found.
-        HTTPException 403: If insufficient permissions.
     """
     stmt = select(User).where(User.id == user_id)
     user = db.execute(stmt).scalar_one_or_none()
@@ -547,16 +471,22 @@ async def reset_user_password(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Only super admin can reset admin passwords
     if user.role in [UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value]:
         if current_user.role != UserRole.SUPER_ADMIN.value:
             raise HTTPException(status_code=403, detail="Only super admin can reset admin passwords")
 
-    # Cannot reset super admin password
     if user.role == UserRole.SUPER_ADMIN.value and user.id != current_user.id:
         raise HTTPException(status_code=400, detail="Cannot reset another super admin's password")
 
-    user.hashed_password = hash_password(reset_request.new_password)
+    # Auto-generate new password
+    new_password = generate_secure_password()
+
+    # Update password history
+    history = list(user.password_history or [])
+    history.insert(0, user.hashed_password)
+    user.password_history = history[:auth_settings.password_history_count]
+
+    user.hashed_password = hash_password(new_password)
     user.must_change_password = True
 
     # Revoke all refresh tokens
@@ -569,6 +499,24 @@ async def reset_user_password(
         token.revoked = True
         token.revoked_at = datetime.now(timezone.utc)
 
+    # Invalidate login sessions
+    db.query(LoginSession).filter(
+        LoginSession.user_id == user_id,
+        LoginSession.is_active == True,
+    ).update({"is_active": False, "logged_out_at": datetime.now(timezone.utc)})
+
+    # Generate welcome OTP for first login with new password
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
+    plain_otp, _ = OTPService.create_otp(db, user.id, OTPPurpose.WELCOME.value, ip, ua)
+
+    # Send email with new credentials in background
+    lifetime = OTPService.get_lifetime_seconds(OTPPurpose.WELCOME.value)
+    background_tasks.add_task(
+        EmailService.send_welcome_email,
+        user.email, user.email, new_password, plain_otp, user.full_name, lifetime
+    )
+
     log_audit(
         db, "password_reset", current_user.id, "user", str(user.id),
         {"reset_by": current_user.username, "tokens_revoked": len(tokens)},
@@ -576,4 +524,8 @@ async def reset_user_password(
     )
     db.commit()
 
-    return {"message": f"Password reset for user '{user.username}'. User must change password on next login."}
+    return {
+        "message": f"Password reset for user '{user.username}'. Email is being sent.",
+        "initial_password": new_password,
+        "email_sent": True,
+    }

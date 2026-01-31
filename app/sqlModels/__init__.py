@@ -5,6 +5,14 @@ from app.sqlModels.gatewayEntities import GatewayConfig, GatewayChangeRequest
 from app.sqlModels.gatewayEntities import ChangeRequestStatus as GatewayChangeRequestStatus
 from app.sqlModels.gatewayEntities import ChangeRequestType as GatewayChangeRequestType
 from app.sqlModels.authEntities import User, RefreshToken, AuditLog, UserRole, UserStatus
+from app.sqlModels.settingsEntities import (
+    DateFormat,
+    Country,
+    Currency,
+    ReconciliationKeyword,
+    SystemSetting,
+    KeywordType,
+)
 
 __all__ = [
     # Batch models
@@ -30,4 +38,11 @@ __all__ = [
     "AuditLog",
     "UserRole",
     "UserStatus",
+    # Settings models
+    "DateFormat",
+    "Country",
+    "Currency",
+    "ReconciliationKeyword",
+    "SystemSetting",
+    "KeywordType",
 ]

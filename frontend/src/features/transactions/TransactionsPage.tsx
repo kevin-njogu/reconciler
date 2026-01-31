@@ -1,15 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import {
-  Search,
-  Filter,
-  ChevronLeft,
-  ChevronRight,
-  RefreshCw,
-  FileSpreadsheet,
-} from 'lucide-react';
-import { transactionsApi, getErrorMessage } from '@/api';
+import { Search, ChevronLeft, ChevronRight, FileSpreadsheet } from 'lucide-react';
+import { transactionsApi, reportsApi, getErrorMessage } from '@/api';
 import type { TransactionFilters } from '@/api/transactions';
 import {
   Button,
@@ -29,98 +22,147 @@ import {
   Alert,
   Select,
 } from '@/components/ui';
-import { formatDate, formatCurrency } from '@/lib/utils';
+import { formatDate, formatCurrency, cn } from '@/lib/utils';
 
 export function TransactionsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const prevBatchRef = useRef<string | null>(null);
 
-  // Filters from URL
-  const [filters, setFilters] = useState<TransactionFilters>({
-    page: parseInt(searchParams.get('page') || '1'),
-    page_size: parseInt(searchParams.get('page_size') || '25'),
-    search: searchParams.get('search') || '',
-    batch_id: searchParams.get('batch_id') || '',
-    reconciliation_status: searchParams.get('reconciliation_status') || '',
+  // State
+  const [selectedBatch, setSelectedBatch] = useState(searchParams.get('batch_id') || '');
+  const [selectedGateway, setSelectedGateway] = useState(searchParams.get('gateway') || '');
+  const [searchInput, setSearchInput] = useState(searchParams.get('search') || '');
+  const [batchSearch, setBatchSearch] = useState('');
+  const [batchDropdownOpen, setBatchDropdownOpen] = useState(false);
+  const [page, setPage] = useState(parseInt(searchParams.get('page') || '1'));
+  const [pageSize, setPageSize] = useState(parseInt(searchParams.get('page_size') || '25'));
+
+  // Fetch batches (latest 5 or search results) - instant refresh on mount
+  const { data: batchesData, isLoading: batchesLoading } = useQuery({
+    queryKey: ['transactionBatches', batchSearch],
+    queryFn: () => reportsApi.getBatches(batchSearch || undefined, batchSearch ? 50 : 5),
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
-  // Search input state (separate from filters to allow typing without immediate API calls)
-  const [searchInput, setSearchInput] = useState(filters.search || '');
-
-  // Fetch filter options
-  const { data: filterOptions, isLoading: filterOptionsLoading } = useQuery({
-    queryKey: ['transaction-filters'],
-    queryFn: () => transactionsApi.getFilterOptions(),
+  // Fetch available gateways when batch is selected - instant refresh
+  const { data: gatewaysData, isLoading: gatewaysLoading } = useQuery({
+    queryKey: ['availableGateways', selectedBatch],
+    queryFn: () => reportsApi.getAvailableGateways(selectedBatch),
+    enabled: !!selectedBatch,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
-  // Fetch transactions
+  const batches = batchesData?.batches || [];
+  const availableGateways = gatewaysData?.gateways || [];
+
+  // Auto-select the latest batch when batches load and no batch is selected
+  useEffect(() => {
+    if (!selectedBatch && batches.length > 0) {
+      setSelectedBatch(batches[0].batch_id);
+    }
+  }, [batches, selectedBatch]);
+
+  // Build filters for transactions API - excluding charges
+  const filters: TransactionFilters = useMemo(() => {
+    const f: TransactionFilters = {
+      page,
+      page_size: pageSize,
+    };
+    if (selectedBatch) f.batch_id = selectedBatch;
+    if (selectedGateway) f.gateway = selectedGateway;
+    if (searchInput) f.search = searchInput;
+    return f;
+  }, [page, pageSize, selectedBatch, selectedGateway, searchInput]);
+
+  // Fetch transactions - instant refresh on mount and filter changes
   const {
     data: transactionsData,
     isLoading: transactionsLoading,
     error: transactionsError,
-    refetch,
   } = useQuery({
     queryKey: ['transactions', filters],
     queryFn: () => transactionsApi.list(filters),
+    enabled: !!selectedBatch && !!selectedGateway,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
-  // Update URL params and filters
-  const updateFilters = (newFilters: Partial<TransactionFilters>) => {
-    const updated = { ...filters, ...newFilters };
-    // Reset to page 1 when filters change (except when changing page)
-    if (!('page' in newFilters)) {
-      updated.page = 1;
-    }
-    setFilters(updated);
+  // Filter out charges from the transactions
+  const filteredTransactions = useMemo(() => {
+    if (!transactionsData?.transactions) return [];
+    return transactionsData.transactions.filter(
+      (txn) => txn.transaction_type !== 'charge'
+    );
+  }, [transactionsData?.transactions]);
 
-    // Update URL
-    const params: Record<string, string> = {};
-    if (updated.page && updated.page > 1) params.page = String(updated.page);
-    if (updated.page_size && updated.page_size !== 25) params.page_size = String(updated.page_size);
-    if (updated.search) params.search = updated.search;
-    if (updated.batch_id) params.batch_id = updated.batch_id;
-    if (updated.reconciliation_status) params.reconciliation_status = updated.reconciliation_status;
-    setSearchParams(params);
+  // Get unique base gateways
+  const getBaseGateway = (gateway: string) => {
+    return gateway.replace(/_internal$/, '').replace(/_external$/, '');
   };
 
-  // Handle search submit
+  const uniqueBaseGateways = useMemo(() => {
+    const gateways = availableGateways.map((g) => getBaseGateway(g.gateway));
+    return Array.from(new Set(gateways));
+  }, [availableGateways]);
+
+  // Auto-select first gateway when gateways load, or reset when batch changes
+  useEffect(() => {
+    if (!selectedBatch) return;
+
+    // If batch changed (user picked a different one), reset gateway
+    if (prevBatchRef.current !== null && prevBatchRef.current !== selectedBatch) {
+      setSelectedGateway('');
+      setPage(1);
+    }
+    prevBatchRef.current = selectedBatch;
+
+    // Auto-select the first gateway if none selected and gateways are available
+    if (!selectedGateway && uniqueBaseGateways.length > 0) {
+      setSelectedGateway(uniqueBaseGateways[0]);
+    }
+  }, [selectedBatch, uniqueBaseGateways, selectedGateway]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.batch-dropdown')) {
+        setBatchDropdownOpen(false);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  // Update URL params
+  useEffect(() => {
+    const params: Record<string, string> = {};
+    if (selectedBatch) params.batch_id = selectedBatch;
+    if (selectedGateway) params.gateway = selectedGateway;
+    if (searchInput) params.search = searchInput;
+    if (page > 1) params.page = String(page);
+    if (pageSize !== 25) params.page_size = String(pageSize);
+    setSearchParams(params);
+  }, [selectedBatch, selectedGateway, searchInput, page, pageSize, setSearchParams]);
+
+  const handleBatchSelect = (batchId: string) => {
+    setSelectedBatch(batchId);
+    setSelectedGateway('');
+    setPage(1);
+    setBatchDropdownOpen(false);
+    setBatchSearch('');
+  };
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    updateFilters({ search: searchInput });
-  };
-
-  // Clear all filters
-  const clearFilters = () => {
-    setSearchInput('');
-    setFilters({
-      page: 1,
-      page_size: 25,
-      search: '',
-      batch_id: '',
-      reconciliation_status: '',
-    });
-    setSearchParams({});
+    setPage(1); // Reset to page 1 on new search
   };
 
   // Pagination helpers
   const pagination = transactionsData?.pagination;
-  const goToPage = (page: number) => updateFilters({ page });
-
-  // Build filter options for selects
-  const batchOptions = [
-    { value: '', label: 'All Batches' },
-    ...(filterOptions?.batch_ids.map((b) => ({
-      value: b,
-      label: b,
-    })) || []),
-  ];
-
-  const statusOptions = [
-    { value: '', label: 'All Statuses' },
-    ...(filterOptions?.reconciliation_statuses.map((s) => ({
-      value: s,
-      label: s.charAt(0).toUpperCase() + s.slice(1),
-    })) || []),
-  ];
+  const goToPage = (newPage: number) => setPage(newPage);
 
   const pageSizeOptions = [
     { value: '10', label: '10 per page' },
@@ -128,12 +170,6 @@ export function TransactionsPage() {
     { value: '50', label: '50 per page' },
     { value: '100', label: '100 per page' },
   ];
-
-  // Check if any filters are active
-  const hasActiveFilters =
-    filters.search ||
-    filters.batch_id ||
-    filters.reconciliation_status;
 
   // Get badge variant based on status
   const getStatusBadge = (status: string | null) => {
@@ -148,81 +184,178 @@ export function TransactionsPage() {
     }
   };
 
-  if (filterOptionsLoading) return <PageLoading />;
+  // Get badge for transaction type
+  const getTypeBadge = (type: string | null) => {
+    if (!type) return <Badge variant="info">-</Badge>;
+    switch (type.toLowerCase()) {
+      case 'debit':
+        return <Badge variant="warning">Debit</Badge>;
+      case 'credit':
+        return <Badge variant="success">Credit</Badge>;
+      default:
+        return <Badge variant="info">{type}</Badge>;
+    }
+  };
+
+  if (batchesLoading) return <PageLoading />;
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
-          <p className="text-gray-500 mt-1">
-            Browse and search all transactions across gateways and batches
-          </p>
-        </div>
-        <Button variant="outline" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
+        <p className="text-gray-500 mt-1">
+          Browse and search all transactions across gateways and batches
+        </p>
       </div>
 
-      {/* Filters Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {/* Search Bar */}
-            <form onSubmit={handleSearch} className="flex gap-2">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search by Transaction ID..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
-                />
-              </div>
-              <Button type="submit" variant="primary">
-                Search
-              </Button>
-            </form>
+      {/* Top Controls: Batch & Gateway on left, Search on right */}
+      <div className="flex items-end justify-between gap-4">
+        {/* Left: Batch and Gateway selectors */}
+        <div className="flex items-end gap-4">
+          {/* Batch Selector with Search */}
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700">Batch</label>
+            <div className="relative batch-dropdown">
+              <button
+                type="button"
+                onClick={() => setBatchDropdownOpen(!batchDropdownOpen)}
+                className={cn(
+                  'w-64 px-3 py-2 text-left border rounded-lg bg-white',
+                  'focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400',
+                  'flex items-center justify-between',
+                  batchDropdownOpen && 'ring-2 ring-primary-400 border-primary-400'
+                )}
+              >
+                <span className={selectedBatch ? 'text-gray-900 font-mono text-sm' : 'text-gray-500'}>
+                  {selectedBatch || 'Select a batch...'}
+                </span>
+                <svg
+                  className={cn(
+                    'h-4 w-4 text-gray-400 transition-transform',
+                    batchDropdownOpen && 'rotate-180'
+                  )}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
 
-            {/* Filter Dropdowns */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Select
-                label="Batch"
-                options={batchOptions}
-                value={filters.batch_id || ''}
-                onChange={(e) => updateFilters({ batch_id: e.target.value })}
-              />
-              <Select
-                label="Status"
-                options={statusOptions}
-                value={filters.reconciliation_status || ''}
-                onChange={(e) => updateFilters({ reconciliation_status: e.target.value })}
-              />
+              {batchDropdownOpen && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg">
+                  {/* Search Input */}
+                  <div className="p-2 border-b">
+                    <input
+                      type="text"
+                      placeholder="Search batch ID..."
+                      value={batchSearch}
+                      onChange={(e) => setBatchSearch(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-400"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+
+                  {/* Batch List */}
+                  <div className="max-h-48 overflow-y-auto">
+                    {batches.length === 0 ? (
+                      <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                        No batches found
+                      </div>
+                    ) : (
+                      batches.map((batch) => (
+                        <button
+                          key={batch.batch_id}
+                          type="button"
+                          onClick={() => handleBatchSelect(batch.batch_id)}
+                          className={cn(
+                            'w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between',
+                            selectedBatch === batch.batch_id && 'bg-primary-50 text-primary-700'
+                          )}
+                        >
+                          <span className="font-mono">{batch.batch_id}</span>
+                          <Badge
+                            variant={batch.status === 'completed' ? 'success' : 'warning'}
+                            className="text-xs ml-2"
+                          >
+                            {batch.status === 'completed' ? 'Closed' : 'Pending'}
+                          </Badge>
+                        </button>
+                      ))
+                    )}
+                  </div>
+
+                  {!batchSearch && batches.length === 5 && (
+                    <div className="px-4 py-2 text-xs text-gray-500 border-t bg-gray-50">
+                      Showing latest 5 batches. Search to find more.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-
-            {/* Clear Filters Button */}
-            {hasActiveFilters && (
-              <div className="flex justify-end">
-                <Button variant="outline" size="sm" onClick={clearFilters}>
-                  Clear All Filters
-                </Button>
-              </div>
-            )}
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Results */}
-      {transactionsLoading ? (
+          {/* Gateway Selector */}
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700">Gateway</label>
+            <select
+              value={selectedGateway}
+              onChange={(e) => {
+                setSelectedGateway(e.target.value);
+                setPage(1);
+              }}
+              disabled={!selectedBatch || gatewaysLoading}
+              className={cn(
+                'w-48 px-3 py-2 border rounded-lg bg-white',
+                'focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400',
+                'disabled:bg-gray-100 disabled:cursor-not-allowed'
+              )}
+            >
+              <option value="">
+                {!selectedBatch
+                  ? 'Select batch first'
+                  : gatewaysLoading
+                    ? 'Loading...'
+                    : 'Select gateway...'}
+              </option>
+              {uniqueBaseGateways.map((gw) => (
+                <option key={gw} value={gw}>
+                  {gw.charAt(0).toUpperCase() + gw.slice(1)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Right: Search */}
+        <form onSubmit={handleSearch} className="flex gap-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by Reference..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
+            />
+          </div>
+          <Button type="submit" variant="primary">
+            Search
+          </Button>
+        </form>
+      </div>
+
+      {/* Content */}
+      {!selectedBatch ? (
+        <Alert variant="info" title="Select a batch">
+          Please select a batch to view transactions.
+        </Alert>
+      ) : !selectedGateway ? (
+        <Alert variant="info" title="Select a gateway">
+          Please select a gateway to view transactions.
+        </Alert>
+      ) : transactionsLoading ? (
         <PageLoading />
       ) : transactionsError ? (
         <Alert variant="error" title="Error loading transactions">
@@ -237,14 +370,17 @@ export function TransactionsPage() {
                 Transactions
                 {pagination && (
                   <span className="text-sm font-normal text-gray-500">
-                    ({pagination.total_count.toLocaleString()} total)
+                    ({filteredTransactions.length} shown, {pagination.total_count.toLocaleString()} total)
                   </span>
                 )}
               </CardTitle>
               <Select
                 options={pageSizeOptions}
-                value={String(filters.page_size || 25)}
-                onChange={(e) => updateFilters({ page_size: parseInt(e.target.value) })}
+                value={String(pageSize)}
+                onChange={(e) => {
+                  setPageSize(parseInt(e.target.value));
+                  setPage(1);
+                }}
                 className="w-32"
               />
             </div>
@@ -255,38 +391,36 @@ export function TransactionsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
-                    <TableHead>Reconciliation Key</TableHead>
-                    <TableHead>Batch</TableHead>
+                    <TableHead>Reference</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Type</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {!transactionsData?.transactions.length ? (
+                  {!filteredTransactions.length ? (
                     <TableEmpty
                       message={
-                        hasActiveFilters
-                          ? 'No transactions match your filters'
-                          : 'No transactions found'
+                        searchInput
+                          ? 'No transactions match your search'
+                          : 'No transactions found for this batch and gateway'
                       }
                       colSpan={5}
                     />
                   ) : (
-                    transactionsData.transactions.map((txn) => (
+                    filteredTransactions.map((txn) => (
                       <TableRow key={txn.id}>
                         <TableCell className="text-gray-500 whitespace-nowrap">
                           {txn.date ? formatDate(txn.date) : '-'}
                         </TableCell>
                         <TableCell>
-                          <span className="font-mono text-sm">{txn.reconciliation_key || '-'}</span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="font-mono text-xs">{txn.batch_id || '-'}</span>
+                          <span className="font-mono text-sm">{txn.transaction_id || '-'}</span>
                         </TableCell>
                         <TableCell className="text-right font-mono">
                           {txn.amount ? formatCurrency(txn.amount) : '-'}
                         </TableCell>
                         <TableCell>{getStatusBadge(txn.reconciliation_status)}</TableCell>
+                        <TableCell>{getTypeBadge(txn.transaction_type)}</TableCell>
                       </TableRow>
                     ))
                   )}
@@ -298,9 +432,7 @@ export function TransactionsPage() {
             {pagination && pagination.total_pages > 1 && (
               <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200">
                 <div className="text-sm text-gray-500">
-                  Showing {((pagination.page - 1) * pagination.page_size) + 1} to{' '}
-                  {Math.min(pagination.page * pagination.page_size, pagination.total_count)} of{' '}
-                  {pagination.total_count.toLocaleString()} transactions
+                  Page {pagination.page} of {pagination.total_pages}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -313,7 +445,6 @@ export function TransactionsPage() {
                     Previous
                   </Button>
                   <div className="flex items-center gap-1">
-                    {/* Page number buttons */}
                     {Array.from({ length: Math.min(5, pagination.total_pages) }, (_, i) => {
                       let pageNum: number;
                       if (pagination.total_pages <= 5) {

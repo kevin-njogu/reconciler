@@ -1,21 +1,21 @@
 @import "tailwindcss";
 
-/* Workpay Brand Color Palette */
+/* Reconciler Brand Color Palette */
 @theme {
-  /* Primary - Teal/Deep Blue (Workpay's primary brand color) */
-  --color-primary-50: #e6f7f7;
-  --color-primary-100: #ccefef;
-  --color-primary-200: #99dfdf;
-  --color-primary-300: #66cfcf;
-  --color-primary-400: #33bfbf;
-  --color-primary-500: #0d9488;
-  --color-primary-600: #0b7a70;
-  --color-primary-700: #086058;
-  --color-primary-800: #064640;
-  --color-primary-900: #032d28;
-  --color-primary-950: #011a17;
+  /* Primary - Green (Brand: #387E1B button/icon text, #205926 app name, #D6F1CA button bg) */
+  --color-primary-50: #f0fdf4;
+  --color-primary-100: #D6F1CA;
+  --color-primary-200: #b5e4a0;
+  --color-primary-300: #8cd47a;
+  --color-primary-400: #5fbe4e;
+  --color-primary-500: #4a9a30;
+  --color-primary-600: #387E1B;
+  --color-primary-700: #2d6816;
+  --color-primary-800: #205926;
+  --color-primary-900: #143a18;
+  --color-primary-950: #0a2010;
 
-  /* Secondary - Soft Blue (from Workpay UI) */
+  /* Secondary - Soft Blue */
   --color-secondary-50: #f0f7fb;
   --color-secondary-100: #e1eff7;
   --color-secondary-200: #c3dfef;
@@ -28,44 +28,44 @@
   --color-secondary-900: #1c2e44;
   --color-secondary-950: #111c2a;
 
-  /* Accent - Warm Yellow/Gold (from Workpay UI) */
-  --color-accent-50: #fefce8;
-  --color-accent-100: #fef9c3;
-  --color-accent-200: #fef08a;
-  --color-accent-300: #f2d74e;
-  --color-accent-400: #facc15;
-  --color-accent-500: #eab308;
-  --color-accent-600: #ca8a04;
-  --color-accent-700: #a16207;
-  --color-accent-800: #854d0e;
-  --color-accent-900: #713f12;
-  --color-accent-950: #422006;
+  /* Accent - Gold (#FDC32D logo icon) */
+  --color-accent-50: #fffdf0;
+  --color-accent-100: #fef9d6;
+  --color-accent-200: #fef0a0;
+  --color-accent-300: #FDC32D;
+  --color-accent-400: #f0b000;
+  --color-accent-500: #d49a00;
+  --color-accent-600: #b07f00;
+  --color-accent-700: #8a6200;
+  --color-accent-800: #644700;
+  --color-accent-900: #3f2d00;
+  --color-accent-950: #241a00;
 
-  /* Success - Green (from Workpay UI #387E1B) */
+  /* Success - Green */
   --color-success-50: #f0fdf4;
   --color-success-100: #dcfce7;
   --color-success-200: #bbf7d0;
   --color-success-300: #86efac;
   --color-success-400: #4ade80;
-  --color-success-500: #387E1B;
-  --color-success-600: #2d6516;
-  --color-success-700: #224c10;
-  --color-success-800: #16330b;
-  --color-success-900: #0b1a05;
-  --color-success-950: #050d03;
+  --color-success-500: #22c55e;
+  --color-success-600: #16a34a;
+  --color-success-700: #15803d;
+  --color-success-800: #166534;
+  --color-success-900: #14532d;
+  --color-success-950: #052e16;
 
-  /* Warning - Coral/Salmon (from Workpay UI #ff9a91) */
-  --color-warning-50: #fff5f4;
-  --color-warning-100: #ffebe9;
-  --color-warning-200: #ffd7d3;
-  --color-warning-300: #ff9a91;
-  --color-warning-400: #ff7a6e;
-  --color-warning-500: #f05545;
-  --color-warning-600: #d93d2e;
-  --color-warning-700: #b32d20;
-  --color-warning-800: #8c1f15;
-  --color-warning-900: #66130b;
-  --color-warning-950: #400a05;
+  /* Warning - Amber */
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-200: #fde68a;
+  --color-warning-300: #fcd34d;
+  --color-warning-400: #fbbf24;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+  --color-warning-800: #92400e;
+  --color-warning-900: #78350f;
+  --color-warning-950: #451a03;
 
   /* Danger - Red */
   --color-danger-50: #fef2f2;
@@ -101,10 +101,11 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Inter', 'Nunito Sans', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: var(--color-neutral-50);
+  background-color: var(--color-neutral-100);
+  color: var(--color-neutral-800);
 }
 
 /* Custom animations */
@@ -129,7 +130,7 @@ body {
   animation-name: slide-in-from-right;
 }
 
-/* Scrollbar styles - Updated to match Workpay theme */
+/* Scrollbar styles */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -141,12 +142,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-primary-300);
+  background: var(--color-neutral-300);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-primary-400);
+  background: var(--color-neutral-400);
 }
 
 /* Focus ring reset for custom components */
@@ -159,6 +160,6 @@ textarea:focus-visible {
 
 /* Selection color */
 ::selection {
-  background-color: var(--color-primary-200);
-  color: var(--color-primary-900);
+  background-color: var(--color-primary-100);
+  color: var(--color-primary-800);
 }

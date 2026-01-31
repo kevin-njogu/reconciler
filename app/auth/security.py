@@ -1,8 +1,10 @@
 """
 Security utilities for authentication.
 
-Provides password hashing, verification, and JWT token operations.
+Provides password hashing, verification, JWT token operations, and OTP generation.
 """
+import secrets
+import string
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Any
 
@@ -104,7 +106,7 @@ def create_refresh_token(
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(
-            days=auth_settings.refresh_token_expire_days
+            hours=auth_settings.refresh_token_expire_hours
         )
 
     to_encode.update({
@@ -114,6 +116,63 @@ def create_refresh_token(
 
     return jwt.encode(
         to_encode,
+        auth_settings.jwt_secret_key,
+        algorithm=auth_settings.jwt_algorithm
+    )
+
+
+def create_pre_auth_token(user_id: int, username: str) -> str:
+    """
+    Create a short-lived pre-auth token issued after credentials verification.
+
+    This token can ONLY be used for OTP verification and resend endpoints.
+    It is NOT a valid access token.
+
+    Args:
+        user_id: The user's database ID.
+        username: The user's username.
+
+    Returns:
+        Encoded JWT token string (5-minute expiry).
+    """
+    expire = datetime.now(timezone.utc) + timedelta(minutes=5)
+
+    payload = {
+        "sub": str(user_id),
+        "username": username,
+        "exp": expire,
+        "type": "pre_auth"
+    }
+
+    return jwt.encode(
+        payload,
+        auth_settings.jwt_secret_key,
+        algorithm=auth_settings.jwt_algorithm
+    )
+
+
+def create_reset_token(user_id: int, email: str) -> str:
+    """
+    Create a short-lived token for password reset after OTP verification.
+
+    Args:
+        user_id: The user's database ID.
+        email: The user's email.
+
+    Returns:
+        Encoded JWT token string (10-minute expiry).
+    """
+    expire = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "exp": expire,
+        "type": "password_reset"
+    }
+
+    return jwt.encode(
+        payload,
         auth_settings.jwt_secret_key,
         algorithm=auth_settings.jwt_algorithm
     )
@@ -138,3 +197,82 @@ def decode_token(token: str) -> Optional[dict[str, Any]]:
         return payload
     except JWTError:
         return None
+
+
+def generate_otp() -> str:
+    """
+    Generate a cryptographically secure 6-digit OTP code.
+
+    Returns:
+        6-digit string (zero-padded).
+    """
+    return f"{secrets.randbelow(1000000):06d}"
+
+
+def hash_otp(otp_code: str) -> str:
+    """
+    Hash an OTP code using bcrypt for secure storage.
+
+    Args:
+        otp_code: The plain 6-digit OTP.
+
+    Returns:
+        Bcrypt hash of the OTP.
+    """
+    otp_bytes = otp_code.encode('utf-8')
+    salt = bcrypt.gensalt(rounds=10)  # Slightly fewer rounds for OTPs (short-lived)
+    hashed = bcrypt.hashpw(otp_bytes, salt)
+    return hashed.decode('utf-8')
+
+
+def verify_otp(plain_otp: str, hashed_otp: str) -> bool:
+    """
+    Verify an OTP code against its hash.
+
+    Args:
+        plain_otp: The plain OTP code to verify.
+        hashed_otp: The bcrypt hash to check against.
+
+    Returns:
+        True if OTP matches.
+    """
+    try:
+        otp_bytes = plain_otp.encode('utf-8')
+        hashed_bytes = hashed_otp.encode('utf-8')
+        return bcrypt.checkpw(otp_bytes, hashed_bytes)
+    except (ValueError, TypeError):
+        return False
+
+
+def generate_secure_password(length: int = 12) -> str:
+    """
+    Generate a random password that meets the password policy.
+
+    The generated password will contain uppercase, lowercase, digits,
+    and special characters.
+
+    Args:
+        length: Password length (minimum 12).
+
+    Returns:
+        Random password string.
+    """
+    if length < 12:
+        length = 12
+
+    # Ensure at least one of each required character type
+    password_chars = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+        secrets.choice("!@#$%^&*(),.?"),
+    ]
+
+    # Fill remaining with mixed characters
+    all_chars = string.ascii_letters + string.digits + "!@#$%^&*(),.?"
+    for _ in range(length - 4):
+        password_chars.append(secrets.choice(all_chars))
+
+    # Shuffle to avoid predictable positions
+    secrets.SystemRandom().shuffle(password_chars)
+    return "".join(password_chars)

@@ -4,10 +4,13 @@ import { apiClient } from './client';
 export interface TransactionRecord {
   id: number;
   date: string | null;
+  transaction_id: string | null;
   reconciliation_key: string | null;
   batch_id: string;
+  gateway: string | null;
   amount: number | null;
   reconciliation_status: string | null;
+  transaction_type: string | null;
 }
 
 export interface TransactionPagination {

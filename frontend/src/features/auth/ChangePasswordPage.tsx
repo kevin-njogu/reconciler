@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Eye, EyeOff, Key } from 'lucide-react';
+import { Key } from 'lucide-react';
 import { useAuthStore } from '@/stores';
 import { authApi, getErrorMessage } from '@/api';
-import { Button, Input, Alert, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
+import { Button, Alert, Card, CardHeader, CardTitle, CardDescription, CardContent, PasswordInput } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
 
 const passwordSchema = z
@@ -26,11 +26,6 @@ export function ChangePasswordPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { mustChangePassword, setMustChangePassword, logout } = useAuthStore();
-  const [showPasswords, setShowPasswords] = useState({
-    current: false,
-    new: false,
-    confirm: false,
-  });
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -61,10 +56,6 @@ export function ChangePasswordPage() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const togglePassword = (field: 'current' | 'new' | 'confirm') => {
-    setShowPasswords((prev) => ({ ...prev, [field]: !prev[field] }));
   };
 
   return (
@@ -98,57 +89,31 @@ export function ChangePasswordPage() {
             </Alert>
           )}
 
+          <Alert variant="info" className="mb-6">
+            Your new password must be at least 8 characters and cannot be the same as any of your last 5 passwords.
+          </Alert>
+
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-            <div className="relative">
-              <Input
-                label="Current Password"
-                type={showPasswords.current ? 'text' : 'password'}
-                placeholder="Enter current password"
-                error={errors.currentPassword?.message}
-                {...register('currentPassword')}
-              />
-              <button
-                type="button"
-                onClick={() => togglePassword('current')}
-                className="absolute right-3 top-[34px] text-gray-400 hover:text-gray-600"
-              >
-                {showPasswords.current ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
-            </div>
+            <PasswordInput
+              label="Current Password"
+              placeholder="Enter current password"
+              error={errors.currentPassword?.message}
+              {...register('currentPassword')}
+            />
 
-            <div className="relative">
-              <Input
-                label="New Password"
-                type={showPasswords.new ? 'text' : 'password'}
-                placeholder="Enter new password"
-                error={errors.newPassword?.message}
-                {...register('newPassword')}
-              />
-              <button
-                type="button"
-                onClick={() => togglePassword('new')}
-                className="absolute right-3 top-[34px] text-gray-400 hover:text-gray-600"
-              >
-                {showPasswords.new ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
-            </div>
+            <PasswordInput
+              label="New Password"
+              placeholder="Enter new password"
+              error={errors.newPassword?.message}
+              {...register('newPassword')}
+            />
 
-            <div className="relative">
-              <Input
-                label="Confirm New Password"
-                type={showPasswords.confirm ? 'text' : 'password'}
-                placeholder="Confirm new password"
-                error={errors.confirmPassword?.message}
-                {...register('confirmPassword')}
-              />
-              <button
-                type="button"
-                onClick={() => togglePassword('confirm')}
-                className="absolute right-3 top-[34px] text-gray-400 hover:text-gray-600"
-              >
-                {showPasswords.confirm ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
-            </div>
+            <PasswordInput
+              label="Confirm New Password"
+              placeholder="Confirm new password"
+              error={errors.confirmPassword?.message}
+              {...register('confirmPassword')}
+            />
 
             <div className="flex gap-3 pt-2">
               {!mustChangePassword && (

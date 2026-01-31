@@ -67,8 +67,16 @@ apiClient.interceptors.response.use(
 
     // If 401 and not already retrying
     if (error.response?.status === 401 && !originalRequest._retry) {
-      // Don't retry on login or refresh endpoints
-      if (originalRequest.url?.includes('/auth/login') || originalRequest.url?.includes('/auth/refresh')) {
+      // Don't retry on auth endpoints (login, OTP, refresh, reset)
+      if (
+        originalRequest.url?.includes('/auth/login') ||
+        originalRequest.url?.includes('/auth/refresh') ||
+        originalRequest.url?.includes('/auth/verify-otp') ||
+        originalRequest.url?.includes('/auth/resend-otp') ||
+        originalRequest.url?.includes('/auth/forgot-password') ||
+        originalRequest.url?.includes('/auth/verify-reset-otp') ||
+        originalRequest.url?.includes('/auth/reset-password')
+      ) {
         return Promise.reject(error);
       }
 
@@ -91,7 +99,7 @@ apiClient.interceptors.response.use(
       const refreshToken = tokenStorage.getRefreshToken();
       if (!refreshToken) {
         tokenStorage.clearTokens();
-        window.location.href = '/login';
+        window.location.href = '/login?session_expired=true';
         return Promise.reject(error);
       }
 
@@ -110,7 +118,7 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError as Error, null);
         tokenStorage.clearTokens();
-        window.location.href = '/login';
+        window.location.href = '/login?session_expired=true';
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
@@ -129,32 +137,51 @@ interface ValidationError {
   ctx?: Record<string, unknown>;
 }
 
-type ApiErrorDetail = string | ValidationError[];
+interface CustomErrorResponse {
+  error?: string;
+  message?: string;
+  detail?: string | ValidationError[];
+  details?: { errors?: ValidationError[] };
+}
 
 export function getErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
-    const axiosError = error as AxiosError<{ detail: ApiErrorDetail }>;
-    const detail = axiosError.response?.data?.detail;
+    const data = (error as AxiosError<CustomErrorResponse>).response?.data;
 
-    if (detail) {
-      // Handle string error (e.g., "Email already exists")
-      if (typeof detail === 'string') {
-        return detail;
+    if (data) {
+      // Handle FastAPI default format: { "detail": "string" | [...] }
+      if (data.detail) {
+        if (typeof data.detail === 'string') {
+          return data.detail;
+        }
+        if (Array.isArray(data.detail) && data.detail.length > 0) {
+          const messages = data.detail.map((err: ValidationError) => {
+            const field = err.loc[err.loc.length - 1];
+            return `${field}: ${err.msg}`;
+          });
+          return messages.join(', ');
+        }
       }
 
-      // Handle validation errors array from FastAPI
-      if (Array.isArray(detail) && detail.length > 0) {
-        // Extract messages from validation errors
-        const messages = detail.map((err: ValidationError) => {
-          // Get the field name from loc (usually last element)
-          const field = err.loc[err.loc.length - 1];
-          return `${field}: ${err.msg}`;
+      // Handle custom error format: { "message": "...", "details": { "errors": [...] } }
+      if (data.details?.errors && Array.isArray(data.details.errors) && data.details.errors.length > 0) {
+        const messages = data.details.errors.map((err: ValidationError) => {
+          if (err.loc && err.msg) {
+            const field = err.loc[err.loc.length - 1];
+            return `${field}: ${err.msg}`;
+          }
+          return err.msg || String(err);
         });
         return messages.join(', ');
       }
+
+      // Fall back to message field
+      if (data.message && typeof data.message === 'string') {
+        return data.message;
+      }
     }
 
-    return axiosError.message || 'An error occurred';
+    return error.message || 'An error occurred';
   }
   if (error instanceof Error) {
     return error.message;

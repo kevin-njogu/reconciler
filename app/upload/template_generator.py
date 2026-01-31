@@ -38,8 +38,8 @@ DEFAULT_TEMPLATE_COLUMNS = [
 # Backwards compatibility alias
 TEMPLATE_COLUMNS = DEFAULT_TEMPLATE_COLUMNS
 
-# Date format for the template (YYYY-DD-MM)
-TEMPLATE_DATE_FORMAT = "%Y-%d-%m"
+# Date format for the template (YYYY-MM-DD)
+TEMPLATE_DATE_FORMAT = "%Y-%m-%d"
 
 
 class TemplateGenerator:
@@ -47,7 +47,7 @@ class TemplateGenerator:
     Generates upload template for file uploads.
 
     Template columns:
-    - Date: YYYY-DD-MM format (mandatory)
+    - Date: YYYY-MM-DD format (mandatory)
     - Reference: Unique transaction identifier (mandatory)
     - Details: Transaction description/narration (mandatory)
     - Debit: Debit amount - numeric (optional, can be empty)
@@ -68,7 +68,7 @@ class TemplateGenerator:
             template_date: Date to format.
 
         Returns:
-            Date string in YYYY-DD-MM format.
+            Date string in YYYY-MM-DD format.
 
         Raises:
             FileUploadException: If date is not provided.
@@ -99,7 +99,7 @@ class TemplateGenerator:
         """
         Generate upload template.
 
-        The template has a single sample row with the current date in YYYY-DD-MM format
+        The template has a single sample row with the current date in YYYY-MM-DD format
         to guide the user on the expected date format.
 
         Args:
@@ -163,9 +163,9 @@ class TemplateGenerator:
                 {
                     "name": DATE_COLUMN,
                     "description": "Transaction date",
-                    "format": "YYYY-DD-MM",
+                    "format": "YYYY-MM-DD",
                     "mandatory": True,
-                    "example": "2026-24-01",
+                    "example": "2026-01-24",
                 },
                 {
                     "name": REFERENCE_COLUMN,
@@ -196,7 +196,7 @@ class TemplateGenerator:
                     "example": "2000.00",
                 },
             ],
-            "date_format": "YYYY-DD-MM",
+            "date_format": "YYYY-MM-DD",
             "supported_formats": ["xlsx", "csv"],
             "notes": [
                 "Date, Reference, and Details are mandatory columns.",

@@ -4,37 +4,10 @@ services:
     container_name: fastapi_application
     ports:
       - "8000:8000"
-    depends_on:
-      reconciler:
-        condition: service_healthy
     env_file:
       - .env
+    environment:
+      - TZ=Africa/Nairobi
     volumes:
       - .:/app
-    environment:
-      - DATABASE_URL=${DATABASE_URL_DOCKER}
     restart: always
-
-  reconciler:
-    image: mysql:8.0
-    container_name: reconciler
-    restart: always
-    env_file:
-      - .env
-    environment:
-      - MYSQL_ROOT_PASSWORD=${DOCKER_ROOT_PASSWORD}
-      - MYSQL_DATABASE=${DATABASE_NAME}
-      - MYSQL_USER=${DATABASE_USERNAME}
-      - MYSQL_PASSWORD=${DATABASE_PASSWORD}
-    ports:
-      - "3307:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DOCKER_ROOT_PASSWORD}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-volumes:
-  mysql_data:

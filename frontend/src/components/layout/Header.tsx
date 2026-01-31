@@ -22,11 +22,11 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-30 h-16 bg-white border-b border-neutral-200">
+    <header className="sticky top-0 z-30 h-16 bg-neutral-100 border-b border-neutral-200">
       <div className="flex h-full items-center justify-between px-6">
         <div>
-          <h1 className="text-lg font-semibold text-neutral-900">
-            Payment Gateway Reconciliation System
+          <h1 className="text-lg font-semibold text-neutral-800">
+            Payment Gateway Reconciliation
           </h1>
         </div>
 
@@ -34,9 +34,9 @@ export function Header() {
         <div className="relative">
           <button
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-neutral-100 transition-colors"
+            className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-neutral-200 transition-colors"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-500 text-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-600 text-white">
               <User className="h-4 w-4" />
             </div>
             <div className="text-left">

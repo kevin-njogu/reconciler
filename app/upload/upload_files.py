@@ -5,11 +5,13 @@ Handles file uploads for reconciliation batches with gateway subdirectory
 organization. Each gateway gets a subdirectory within the batch directory,
 containing at most 2 files: one external and one internal.
 
-Directory structure:
-    uploads/{batch_id}/{external_gateway}/{gateway_name}.{ext}
+Directory structure (hybrid approach):
+    uploads/{batch_id}/{external_gateway}/raw/{original_filename}  # Raw uploads
+    uploads/{batch_id}/{external_gateway}/{gateway_name}.csv        # Normalized files
 """
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
 from io import BytesIO
+from dataclasses import dataclass
 
 import pandas as pd
 from fastapi import UploadFile
@@ -22,6 +24,7 @@ from app.storage import StorageBackend, get_storage, SUPPORTED_EXTENSIONS
 from app.upload.batch_creation import BatchService
 from app.upload.template_generator import DEFAULT_TEMPLATE_COLUMNS
 from app.config.gateways import get_gateway_from_db
+from app.dataProcessing.file_transformer import FileTransformer, TransformationResult, create_transformer_from_config
 
 logger = get_logger(__name__)
 
@@ -39,6 +42,8 @@ def get_external_gateway_for(gateway_name: str, db: Session) -> str:
     External gateways map to themselves. Internal gateways (e.g., workpay_equity)
     map to their corresponding external gateway (e.g., equity).
 
+    Checks both legacy (gateway_configs) and unified (gateway_file_configs) systems.
+
     Args:
         gateway_name: The upload gateway name (e.g., 'equity' or 'workpay_equity').
         db: Database session for gateway lookups.
@@ -49,20 +54,41 @@ def get_external_gateway_for(gateway_name: str, db: Session) -> str:
     Raises:
         FileUploadException: If gateway is not valid.
     """
+    # First, try legacy gateway_configs table
     gateway_config = get_gateway_from_db(db, gateway_name)
-    if not gateway_config:
-        raise FileUploadException(f"Gateway not found: {gateway_name}")
-
-    if gateway_config["type"] == "external":
+    if gateway_config:
+        if gateway_config["type"] == "external":
+            return gateway_name
+        # Internal gateway - derive the external gateway name
+        if gateway_name.startswith("workpay_"):
+            return gateway_name[len("workpay_"):]
         return gateway_name
 
-    # Internal gateway - derive the external gateway name
-    # Internal gateways follow the pattern: workpay_{external_gateway}
-    if gateway_name.startswith("workpay_"):
-        return gateway_name[len("workpay_"):]
+    # Try unified gateway_file_configs table
+    from sqlalchemy import select
+    from app.sqlModels.gatewayEntities import GatewayFileConfig, Gateway
 
-    # Fallback: use the gateway name itself as subdirectory
-    return gateway_name
+    stmt = select(GatewayFileConfig).where(
+        GatewayFileConfig.name == gateway_name,
+        GatewayFileConfig.is_active == True
+    )
+    file_config = db.execute(stmt).scalar_one_or_none()
+
+    if file_config:
+        if file_config.config_type == "external":
+            return gateway_name
+        # Internal config - find the associated gateway's external config name
+        gateway = db.query(Gateway).filter(Gateway.id == file_config.gateway_id).first()
+        if gateway:
+            external_config = gateway.get_external_config()
+            if external_config:
+                return external_config.name
+        # Fallback: derive from naming pattern
+        if gateway_name.startswith("workpay_"):
+            return gateway_name[len("workpay_"):]
+        return gateway_name
+
+    raise FileUploadException(f"Gateway not found: {gateway_name}")
 
 
 def get_storage_filename(gateway_name: str, extension: str) -> str:
@@ -373,3 +399,134 @@ class FileUpload:
             List of filenames.
         """
         return self.storage.list_files(batch_id, gateway=gateway)
+
+    async def save_raw_file(
+        self,
+        file: UploadFile,
+        gateway_name: str,
+        batch_id: str,
+        external_gateway: str,
+        content: bytes,
+    ) -> str:
+        """
+        Save a raw file to the raw/ subdirectory.
+
+        Args:
+            file: The uploaded file.
+            gateway_name: Validated gateway name.
+            batch_id: The batch ID.
+            external_gateway: The external gateway (subdirectory name).
+            content: Pre-read file content.
+
+        Returns:
+            Storage path for the raw file.
+        """
+        try:
+            extension = self._get_file_extension(file.filename)
+            raw_filename = f"{gateway_name}_raw.{extension}"
+            raw_path = f"{external_gateway}/raw"
+
+            # Ensure raw directory exists
+            self.storage.ensure_gateway_directory(batch_id, raw_path)
+
+            # Save raw file
+            storage_path = self.storage.save_file(
+                batch_id, raw_filename, content, gateway=raw_path
+            )
+
+            log_operation(
+                logger, "save_raw_file", success=True,
+                batch_id=batch_id, gateway=raw_path,
+                file_name=raw_filename,
+            )
+
+            return storage_path
+
+        except Exception as e:
+            log_exception(logger, "Error saving raw file", e, batch_id=batch_id)
+            raise FileUploadException(f"Failed to save raw file: {str(e)}")
+
+    async def transform_and_save(
+        self,
+        file: UploadFile,
+        gateway_name: str,
+        batch_id: str,
+        content: bytes,
+        gateway_config: Dict[str, Any],
+    ) -> Tuple[str, str, str, TransformationResult]:
+        """
+        Transform a raw file and save both raw and normalized versions.
+
+        This implements the hybrid approach:
+        1. Save raw file to {batch_id}/{gateway}/raw/
+        2. Transform using gateway configuration
+        3. Save normalized CSV to {batch_id}/{gateway}/
+
+        Args:
+            file: The uploaded file.
+            gateway_name: Validated gateway name.
+            batch_id: The batch ID.
+            content: Pre-read file content.
+            gateway_config: Gateway file configuration dict.
+
+        Returns:
+            Tuple of (normalized_filename, external_gateway, storage_path, transformation_result).
+
+        Raises:
+            FileUploadException: On validation or transformation errors.
+        """
+        try:
+            self.validate_file(file)
+
+            external_gateway = get_external_gateway_for(gateway_name, self.db)
+
+            # Check file limit
+            self.check_gateway_file_limit(batch_id, gateway_name, external_gateway)
+
+            # Save raw file first
+            await self.save_raw_file(file, gateway_name, batch_id, external_gateway, content)
+
+            # Create transformer from gateway config
+            transformer = create_transformer_from_config(gateway_config)
+
+            # Transform the file
+            result = transformer.transform(content, file.filename)
+
+            if not result.success:
+                raise FileUploadException(
+                    f"File transformation failed: {'; '.join(result.errors)}"
+                )
+
+            # Save normalized file as CSV
+            normalized_filename = f"{gateway_name}.csv"
+
+            # Delete existing normalized file if any
+            existing_files = self.storage.list_files(batch_id, gateway=external_gateway)
+            for existing in existing_files:
+                name_without_ext = existing.rsplit('.', 1)[0] if '.' in existing else existing
+                if name_without_ext == gateway_name:
+                    self.storage.delete_file(batch_id, existing, gateway=external_gateway)
+                    logger.info(
+                        f"Replaced existing file {existing} with {normalized_filename}",
+                        extra={"batch_id": batch_id, "gateway": external_gateway}
+                    )
+
+            # Save normalized CSV
+            storage_path = self.storage.save_file(
+                batch_id, normalized_filename, result.normalized_data, gateway=external_gateway
+            )
+
+            log_operation(
+                logger, "transform_and_save", success=True,
+                batch_id=batch_id, gateway=external_gateway,
+                file_name=normalized_filename,
+                rows=result.row_count,
+            )
+
+            return normalized_filename, external_gateway, storage_path, result
+
+        except FileUploadException:
+            raise
+        except Exception as e:
+            log_exception(logger, "Error in transform_and_save", e, batch_id=batch_id)
+            raise FileUploadException(f"Transformation error: {str(e)}")

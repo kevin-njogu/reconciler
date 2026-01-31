@@ -64,9 +64,13 @@ export function GatewayApprovalPage() {
     mutationFn: ({ requestId, approved, rejectionReason }: { requestId: number; approved: boolean; rejectionReason?: string }) =>
       gatewaysApi.reviewChangeRequest(requestId, { approved, rejection_reason: rejectionReason }),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['gateway-change-requests'] });
-      queryClient.invalidateQueries({ queryKey: ['gateway-configs'] });
-      queryClient.invalidateQueries({ queryKey: ['gateways'] });
+      // Invalidate all gateway-related queries to ensure UI updates everywhere
+      queryClient.invalidateQueries({ queryKey: ['gateway-change-requests'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['gateway-configs'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['gateways'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['unified-gateways'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['my-gateway-requests'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['available-gateways'], refetchType: 'all' });
       toast.success(variables.approved ? 'Change request approved' : 'Change request rejected');
       closeReviewModal();
     },

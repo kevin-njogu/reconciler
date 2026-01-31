@@ -20,12 +20,15 @@ router = APIRouter(prefix="/api/v1/transactions", tags=["Transactions"])
 def transaction_to_dict(txn: Transaction) -> dict:
     """Convert Transaction model to response dict.
 
-    Returns only the essential columns:
+    Returns the essential columns:
     - date: Transaction date
+    - transaction_id: Transaction reference
     - reconciliation_key: Composite key for matching
     - batch_id: Reconciliation batch identifier
+    - gateway: Gateway name
     - amount: Debit or credit amount (whichever is non-zero)
     - reconciliation_status: reconciled/unreconciled
+    - transaction_type: Type of transaction (debit, credit, charge)
     """
     # Determine the amount (use debit if present, otherwise credit)
     amount = None
@@ -37,10 +40,13 @@ def transaction_to_dict(txn: Transaction) -> dict:
     return {
         "id": txn.id,
         "date": txn.date.isoformat() if txn.date else None,
+        "transaction_id": txn.transaction_id,
         "reconciliation_key": txn.reconciliation_key,
         "batch_id": txn.batch_id,
+        "gateway": txn.gateway,
         "amount": amount,
         "reconciliation_status": txn.reconciliation_status,
+        "transaction_type": txn.transaction_type,
     }
 
 
@@ -72,7 +78,15 @@ def list_transactions(
         conditions.append(Transaction.transaction_id.ilike(f"%{search}%"))
 
     if gateway:
-        conditions.append(Transaction.gateway == gateway.lower())
+        # Support base gateway filtering (e.g., "equity" matches "equity_external" and "equity_internal")
+        gateway_lower = gateway.lower()
+        conditions.append(
+            or_(
+                Transaction.gateway == gateway_lower,
+                Transaction.gateway == f"{gateway_lower}_external",
+                Transaction.gateway == f"{gateway_lower}_internal",
+            )
+        )
 
     if batch_id:
         conditions.append(Transaction.batch_id == batch_id)

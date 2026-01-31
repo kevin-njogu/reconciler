@@ -3,6 +3,8 @@ Authentication dependencies for FastAPI.
 
 Provides dependency injection functions for authentication and authorization.
 """
+import logging
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Callable
 
 from fastapi import Depends, HTTPException, Request
@@ -12,6 +14,9 @@ from sqlalchemy import select
 
 from app.database.mysql_configs import get_database
 from app.auth.security import decode_token
+from app.auth.config import auth_settings
+
+logger = logging.getLogger("app.auth.dependencies")
 
 # HTTP Bearer token scheme
 security = HTTPBearer(auto_error=False)
@@ -25,19 +30,12 @@ def get_current_user(
     """
     Get the current authenticated user from the JWT token.
 
-    Args:
-        request: The incoming request.
-        credentials: HTTP Bearer credentials.
-        db: Database session.
-
-    Returns:
-        User object if authenticated.
+    Also validates the login session is still active (concurrent session prevention).
 
     Raises:
         HTTPException 401: If not authenticated or token invalid.
     """
-    # Import here to avoid circular imports
-    from app.sqlModels.authEntities import User, UserStatus
+    from app.sqlModels.authEntities import User, UserStatus, LoginSession
 
     if credentials is None:
         raise HTTPException(
@@ -96,27 +94,93 @@ def get_current_user(
             detail="Account has been deactivated"
         )
 
+    # Validate login session is still active (concurrent session prevention)
+    session_token = payload.get("session")
+    if session_token:
+        stmt = select(LoginSession).where(
+            LoginSession.session_token == session_token,
+            LoginSession.user_id == user.id,
+            LoginSession.is_active == True,
+        )
+        session = db.execute(stmt).scalar_one_or_none()
+        if not session:
+            logger.warning(
+                "Session invalidated for user %s (session: %s)",
+                user.id, session_token[:8] + "..."
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="Session has been invalidated. Please login again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    return user
+
+
+def get_pre_auth_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_database)
+):
+    """
+    Get user from a pre-auth token (issued after credential verification).
+
+    Used for OTP verification and resend endpoints only.
+
+    Raises:
+        HTTPException 401: If pre-auth token is invalid or expired.
+    """
+    from app.sqlModels.authEntities import User
+
+    if credentials is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Pre-auth token required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = credentials.credentials
+    payload = decode_token(token)
+
+    if payload is None or payload.get("type") != "pre_auth":
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired pre-auth token. Please login again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    stmt = select(User).where(User.id == int(user_id))
+    user = db.execute(stmt).scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     return user
 
 
 def require_active_user(
-    user = Depends(get_current_user)
+    user = Depends(get_current_user),
+    db: Session = Depends(get_database)
 ):
     """
-    Require an active user (not requiring password change).
+    Require an active user who has changed their password.
 
-    For most endpoints, we still allow users who need to change password
-    to access basic functionality. This dependency enforces that they
-    have changed their password.
-
-    Args:
-        user: The current authenticated user.
-
-    Returns:
-        User object if active and password changed.
+    Also checks for 90-day password expiry and auto-sets must_change_password.
 
     Raises:
-        HTTPException 403: If user must change password.
+        HTTPException 403: If user must change password or account inactive.
     """
     from app.sqlModels.authEntities import UserStatus
 
@@ -125,6 +189,17 @@ def require_active_user(
             status_code=403,
             detail="Account is not active"
         )
+
+    # Check 90-day password expiry
+    if auth_settings.password_expiry_days > 0 and not user.must_change_password:
+        if user.password_changed_at:
+            changed = user.password_changed_at
+            if changed.tzinfo is None:
+                changed = changed.replace(tzinfo=timezone.utc)
+            expiry_date = changed + timedelta(days=auth_settings.password_expiry_days)
+            if datetime.now(timezone.utc) > expiry_date:
+                user.must_change_password = True
+                db.commit()
 
     if user.must_change_password:
         raise HTTPException(
@@ -137,18 +212,8 @@ def require_active_user(
 
 
 def require_role(allowed_roles: List[str]) -> Callable:
-    """
-    Create a dependency that requires specific roles.
-
-    Args:
-        allowed_roles: List of allowed role values.
-
-    Returns:
-        Dependency function.
-    """
+    """Create a dependency that requires specific roles."""
     def role_checker(user = Depends(require_active_user)):
-        from app.sqlModels.authEntities import UserRole
-
         if user.role not in allowed_roles:
             raise HTTPException(
                 status_code=403,
@@ -160,18 +225,7 @@ def require_role(allowed_roles: List[str]) -> Callable:
 
 
 def require_admin(user = Depends(require_active_user)):
-    """
-    Require admin or super_admin role.
-
-    Args:
-        user: The current authenticated user.
-
-    Returns:
-        User object if admin.
-
-    Raises:
-        HTTPException 403: If not admin.
-    """
+    """Require admin or super_admin role."""
     from app.sqlModels.authEntities import UserRole
 
     if user.role not in [UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value]:
@@ -183,18 +237,7 @@ def require_admin(user = Depends(require_active_user)):
 
 
 def require_super_admin(user = Depends(require_active_user)):
-    """
-    Require super_admin role.
-
-    Args:
-        user: The current authenticated user.
-
-    Returns:
-        User object if super admin.
-
-    Raises:
-        HTTPException 403: If not super admin.
-    """
+    """Require super_admin role."""
     from app.sqlModels.authEntities import UserRole
 
     if user.role != UserRole.SUPER_ADMIN.value:
@@ -206,21 +249,7 @@ def require_super_admin(user = Depends(require_active_user)):
 
 
 def require_user_role(user = Depends(require_active_user)):
-    """
-    Require user role specifically (not admin or super_admin).
-
-    This is for operations that should only be initiated by users (inputters),
-    not by admins who should only approve.
-
-    Args:
-        user: The current authenticated user.
-
-    Returns:
-        User object if user role.
-
-    Raises:
-        HTTPException 403: If not user role.
-    """
+    """Require user role specifically (not admin or super_admin)."""
     from app.sqlModels.authEntities import UserRole
 
     if user.role != UserRole.USER.value:
@@ -232,20 +261,7 @@ def require_user_role(user = Depends(require_active_user)):
 
 
 def require_admin_only(user = Depends(require_active_user)):
-    """
-    Require admin role specifically (not super_admin).
-
-    This is for approval operations that should only be done by admins.
-
-    Args:
-        user: The current authenticated user.
-
-    Returns:
-        User object if admin role.
-
-    Raises:
-        HTTPException 403: If not admin role.
-    """
+    """Require admin role specifically (not super_admin)."""
     from app.sqlModels.authEntities import UserRole
 
     if user.role != UserRole.ADMIN.value:

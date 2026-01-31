@@ -98,7 +98,7 @@ export function BatchDetailPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Batch ID</p>
-                  <p className="font-mono font-medium">{batch.batch_id}</p>
+                  <p className="font-mono">{batch.batch_id}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -107,7 +107,7 @@ export function BatchDetailPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Created At</p>
-                  <p className="font-medium">{formatDateTime(batch.created_at)}</p>
+                  <p>{formatDateTime(batch.created_at)}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -116,7 +116,7 @@ export function BatchDetailPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Created By</p>
-                  <p className="font-medium">{batch.created_by || 'Unknown'}</p>
+                  <p>{batch.created_by || 'Unknown'}</p>
                 </div>
               </div>
               <div>
@@ -131,7 +131,7 @@ export function BatchDetailPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Files</p>
-                  <p className="font-medium">{batch.file_count ?? 0}</p>
+                  <p>{batch.file_count ?? 0}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -140,7 +140,7 @@ export function BatchDetailPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Transactions</p>
-                  <p className="font-medium">{batch.transaction_count ?? 0}</p>
+                  <p>{batch.transaction_count ?? 0}</p>
                 </div>
               </div>
               {batch.closed_at && (
@@ -150,7 +150,7 @@ export function BatchDetailPage() {
                   </div>
                   <div>
                     <p className="text-sm text-gray-500">Closed At</p>
-                    <p className="font-medium">{formatDateTime(batch.closed_at)}</p>
+                    <p>{formatDateTime(batch.closed_at)}</p>
                   </div>
                 </div>
               )}
@@ -161,7 +161,7 @@ export function BatchDetailPage() {
                   </div>
                   <div>
                     <p className="text-sm text-gray-500">Unreconciled</p>
-                    <p className="font-medium text-red-600">{batch.unreconciled_count}</p>
+                    <p className="text-red-600">{batch.unreconciled_count}</p>
                   </div>
                 </div>
               )}
@@ -255,7 +255,7 @@ export function BatchDetailPage() {
                         <div className="flex items-center gap-2">
                           <FileSpreadsheet className="h-4 w-4 text-gray-400" />
                           <div>
-                            <p className="font-medium">{file.filename}</p>
+                            <p>{file.filename}</p>
                             {file.original_filename !== file.filename && (
                               <p className="text-xs text-gray-500">
                                 Original: {file.original_filename}

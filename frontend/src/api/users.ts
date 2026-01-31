@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { User, UserCreateRequest, UserUpdateRequest, UserStatus, UserRole } from '@/types';
+import type { User, UserCreateRequest, UserCreateResponse, UserUpdateRequest, UserStatus, UserRole } from '@/types';
 
 export interface UsersListParams {
   status?: UserStatus;
@@ -25,8 +25,8 @@ export const usersApi = {
     return response.data;
   },
 
-  create: async (data: UserCreateRequest): Promise<User> => {
-    const response = await apiClient.post<User>('/users', data);
+  create: async (data: UserCreateRequest): Promise<UserCreateResponse> => {
+    const response = await apiClient.post<UserCreateResponse>('/users', data);
     return response.data;
   },
 
@@ -50,10 +50,10 @@ export const usersApi = {
     return response.data;
   },
 
-  resetPassword: async (userId: number, newPassword: string): Promise<{ message: string }> => {
-    const response = await apiClient.post<{ message: string }>(`/users/${userId}/reset-password`, {
-      new_password: newPassword,
-    });
+  resetPassword: async (userId: number): Promise<{ message: string; initial_password: string; email_sent: boolean }> => {
+    const response = await apiClient.post<{ message: string; initial_password: string; email_sent: boolean }>(
+      `/users/${userId}/reset-password`
+    );
     return response.data;
   },
 };

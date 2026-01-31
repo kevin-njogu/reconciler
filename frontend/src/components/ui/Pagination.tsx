@@ -75,9 +75,7 @@ export function Pagination({
       {/* Item count */}
       {showItemCount && totalItems !== undefined && pageSize !== undefined && (
         <div className="text-sm text-gray-500">
-          Showing <span className="font-medium">{startItem}</span> to{' '}
-          <span className="font-medium">{endItem}</span> of{' '}
-          <span className="font-medium">{totalItems}</span> results
+          Showing {startItem} to {endItem} of {totalItems} results
         </div>
       )}
 
@@ -107,7 +105,7 @@ export function Pagination({
               className={cn(
                 'min-w-[32px] h-8 px-2 rounded-lg text-sm font-medium transition-colors',
                 currentPage === page
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-primary-100 text-primary-600 font-semibold'
                   : 'text-gray-700 hover:bg-gray-100'
               )}
             >
@@ -177,8 +175,7 @@ export function CompactPagination({
       </button>
 
       <span className="text-sm text-gray-600">
-        Page <span className="font-medium">{currentPage}</span> of{' '}
-        <span className="font-medium">{totalPages}</span>
+        Page {currentPage} of {totalPages}
       </span>
 
       <button

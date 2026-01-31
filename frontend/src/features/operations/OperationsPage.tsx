@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Settings2, AlertCircle, CheckCircle2, Clock, LayoutGrid, List } from 'lucide-react';
+import { ArrowLeftRight, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 import { operationsApi, batchesApi, getErrorMessage } from '@/api';
 import type { UnreconciledTransaction } from '@/api/operations';
 import {
@@ -10,14 +10,6 @@ import {
   CardHeader,
   CardTitle,
   CardContent,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-  TableEmpty,
-  Badge,
   PageLoading,
   Alert,
   Select,
@@ -25,19 +17,17 @@ import {
   ModalFooter,
 } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
-import { formatDateTime, formatCurrency } from '@/lib/utils';
-import { SideBySideTransactionView } from './SideBySideTransactionView';
+import { formatCurrency } from '@/lib/utils';
+import { SimpleSideBySideView } from './SimpleSideBySideView';
 
 // Predefined reconciliation reasons
 const RECONCILIATION_REASONS = [
   { value: '', label: 'Select a reason...' },
-  { value: 'Wallet TopUp', label: 'Wallet TopUp' },
   { value: 'MMF Funding', label: 'MMF Funding' },
   { value: 'Utility Funding', label: 'Utility Funding' },
   { value: 'Wallet Refund', label: 'Wallet Refund' },
   { value: 'InterCompany', label: 'InterCompany' },
   { value: 'Bank Funding', label: 'Bank Funding' },
-  { value: 'Manual Topup', label: 'Manual Topup' },
   { value: 'FX Conversion', label: 'FX Conversion' },
   { value: 'Other', label: 'Other (Specify below)' },
 ];
@@ -70,13 +60,10 @@ export function OperationsPage() {
   const [bulkSelectedReason, setBulkSelectedReason] = useState('');
   const [bulkCustomReason, setBulkCustomReason] = useState('');
 
-  // View mode: 'list' (grouped by gateway) or 'side-by-side' (internal vs external)
-  const [viewMode, setViewMode] = useState<'list' | 'side-by-side'>('side-by-side');
-
-  // Fetch batches for dropdown
+  // Fetch only pending batches
   const { data: batchesData, isLoading: batchesLoading } = useQuery({
-    queryKey: ['batches'],
-    queryFn: () => batchesApi.list(),
+    queryKey: ['batches', 'pending'],
+    queryFn: () => batchesApi.list({ status: 'pending' }),
   });
 
   const batches = batchesData?.batches;
@@ -97,7 +84,11 @@ export function OperationsPage() {
     mutationFn: ({ transactionId, note }: { transactionId: number; note: string }) =>
       operationsApi.manualReconcile(transactionId, note),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['unreconciled'] });
+      queryClient.invalidateQueries({ queryKey: ['unreconciled'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['pending-authorization'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['batches'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['transactions'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' });
       toast.success('Transaction submitted for authorization');
       closeReconcileModal();
     },
@@ -109,7 +100,11 @@ export function OperationsPage() {
     mutationFn: ({ transactionIds, note }: { transactionIds: number[]; note: string }) =>
       operationsApi.manualReconcileBulk(transactionIds, note),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['unreconciled'] });
+      queryClient.invalidateQueries({ queryKey: ['unreconciled'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['pending-authorization'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['batches'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['transactions'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' });
       toast.success(data.message);
       closeBulkModal();
       setSelectedIds(new Set());
@@ -230,25 +225,38 @@ export function OperationsPage() {
   };
 
   const batchOptions = [
-    { value: '', label: 'Select a batch...' },
+    { value: '', label: 'Select a pending batch...' },
     ...(batches?.map((b) => ({
       value: b.batch_id,
-      label: `${b.batch_id} (${b.status})`,
+      label: b.batch_id,
     })) || []),
   ];
 
+  // Build unified gateway options (extract base gateway names)
+  const getBaseGateway = (gateway: string) => {
+    return gateway.replace(/_internal$/, '').replace(/_external$/, '');
+  };
+
+  // Get unique base gateways from available gateways
+  const uniqueBaseGateways = Array.from(
+    new Set(
+      (unreconciledData?.available_gateways || []).map((g) => getBaseGateway(g))
+    )
+  );
+
   const gatewayOptions = [
-    { value: '', label: 'All Gateways' },
-    ...(unreconciledData?.available_gateways.map((g) => ({
+    { value: '', label: 'Select gateway...' },
+    ...uniqueBaseGateways.map((g) => ({
       value: g,
       label: g.charAt(0).toUpperCase() + g.slice(1),
-    })) || []),
+    })),
   ];
 
   if (batchesLoading) return <PageLoading />;
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Manual Reconciliation</h1>
@@ -256,76 +264,54 @@ export function OperationsPage() {
             View and manually reconcile unreconciled transactions
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {/* View Mode Toggle */}
-          <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
-            <button
-              onClick={() => setViewMode('side-by-side')}
-              className={`flex items-center gap-1 px-3 py-2 text-sm ${
-                viewMode === 'side-by-side'
-                  ? 'bg-primary-500 text-white'
-                  : 'bg-white text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <LayoutGrid className="h-4 w-4" />
-              Side by Side
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`flex items-center gap-1 px-3 py-2 text-sm ${
-                viewMode === 'list'
-                  ? 'bg-primary-500 text-white'
-                  : 'bg-white text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <List className="h-4 w-4" />
-              List View
-            </button>
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-600">{selectedIds.size} selected</span>
+            <Button variant="primary" onClick={openBulkModal}>
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              Reconcile Selected
+            </Button>
           </div>
-
-          {selectedIds.size > 0 && (
-            <>
-              <span className="text-sm text-gray-600">{selectedIds.size} selected</span>
-              <Button variant="primary" onClick={openBulkModal}>
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Reconcile Selected
-              </Button>
-            </>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings2 className="h-5 w-5" />
-            Select Batch and Gateway
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Centered Half-Page Selection Card */}
+      <div className="flex justify-center">
+        <Card className="w-full max-w-xl">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2">
+              <ArrowLeftRight className="h-5 w-5 text-primary-600" />
+              Select Batch and Gateway
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
             <Select
               label="Batch"
               options={batchOptions}
               value={selectedBatchId}
               onChange={handleBatchChange}
+              placeholder="Select a pending batch..."
             />
             <Select
               label="Gateway"
               options={gatewayOptions}
               value={selectedGateway}
               onChange={handleGatewayChange}
-              disabled={!selectedBatchId}
+              placeholder={selectedBatchId ? 'Select gateway...' : 'Select batch first'}
+              disabled={!selectedBatchId || unreconciledLoading}
             />
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Content */}
       {!selectedBatchId ? (
         <Alert variant="info" title="Select a batch">
-          Please select a batch to view unreconciled transactions.
+          Please select a pending batch to view unreconciled transactions.
+        </Alert>
+      ) : !selectedGateway ? (
+        <Alert variant="info" title="Select a gateway">
+          Please select a gateway to view unreconciled transactions.
         </Alert>
       ) : unreconciledLoading ? (
         <PageLoading />
@@ -335,23 +321,11 @@ export function OperationsPage() {
         </Alert>
       ) : unreconciledData?.total_count === 0 ? (
         <Alert variant="success" title="All transactions reconciled">
-          There are no unreconciled transactions for this batch
-          {selectedGateway ? ` and gateway (${selectedGateway})` : ''}.
+          There are no unreconciled transactions for this batch and gateway.
         </Alert>
-      ) : viewMode === 'side-by-side' ? (
-        /* Side-by-Side View */
-        <SideBySideTransactionView
-          byGateway={unreconciledData?.by_gateway || {}}
-          selectedIds={selectedIds}
-          onToggleSelection={toggleSelection}
-          onToggleAllInternal={toggleAllInGateway}
-          onToggleAllExternal={toggleAllInGateway}
-          onReconcileClick={openReconcileModal}
-        />
       ) : (
-        /* List View (Grouped by Gateway) */
-        <div className="space-y-6">
-          {/* Summary */}
+        <>
+          {/* Summary Banner */}
           <div className="flex items-center gap-4 p-4 bg-warning-50 border border-warning-200 rounded-lg">
             <AlertCircle className="h-6 w-6 text-warning-600" />
             <div>
@@ -365,110 +339,17 @@ export function OperationsPage() {
             </div>
           </div>
 
-          {/* Transactions by Gateway */}
-          {Object.entries(unreconciledData?.by_gateway || {}).map(([gateway, transactions]) => {
-            const allSelected = transactions.every((t) => selectedIds.has(t.id));
-            const someSelected = transactions.some((t) => selectedIds.has(t.id));
-
-            return (
-              <Card key={gateway}>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={allSelected}
-                        ref={(el) => {
-                          if (el) el.indeterminate = someSelected && !allSelected;
-                        }}
-                        onChange={() => toggleAllInGateway(transactions)}
-                        className="h-4 w-4 rounded border-gray-300 text-primary-500 focus:ring-primary-400"
-                      />
-                      <span className="capitalize">{gateway}</span>
-                    </div>
-                    <Badge variant="warning">{transactions.length} unreconciled</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-12"></TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Transaction ID</TableHead>
-                        <TableHead>Narration</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {transactions.length === 0 ? (
-                        <TableEmpty message="No unreconciled transactions" colSpan={7} />
-                      ) : (
-                        transactions.map((txn) => (
-                          <TableRow key={txn.id}>
-                            <TableCell>
-                              <input
-                                type="checkbox"
-                                checked={selectedIds.has(txn.id)}
-                                onChange={() => toggleSelection(txn.id)}
-                                className="h-4 w-4 rounded border-gray-300 text-primary-500 focus:ring-primary-400"
-                              />
-                            </TableCell>
-                            <TableCell className="text-gray-500">
-                              {txn.date ? formatDateTime(txn.date) : '-'}
-                            </TableCell>
-                            <TableCell>
-                              <span className="font-mono text-sm">
-                                {txn.transaction_id || '-'}
-                              </span>
-                            </TableCell>
-                            <TableCell className="max-w-xs truncate" title={txn.narrative || ''}>
-                              {txn.narrative || '-'}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={
-                                  txn.transaction_type === 'debit'
-                                    ? 'danger'
-                                    : txn.transaction_type === 'credit'
-                                      ? 'success'
-                                      : 'info'
-                                }
-                              >
-                                {txn.transaction_type}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {txn.debit
-                                ? formatCurrency(txn.debit)
-                                : txn.credit
-                                  ? formatCurrency(txn.credit)
-                                  : txn.amount
-                                    ? formatCurrency(txn.amount)
-                                    : '-'}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={() => openReconcileModal(txn)}
-                              >
-                                <CheckCircle2 className="h-4 w-4 mr-1" />
-                                Reconcile
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+          {/* Side-by-Side View */}
+          <SimpleSideBySideView
+            byGateway={unreconciledData?.by_gateway || {}}
+            selectedGateway={selectedGateway}
+            selectedIds={selectedIds}
+            onToggleSelection={toggleSelection}
+            onToggleAllInternal={toggleAllInGateway}
+            onToggleAllExternal={toggleAllInGateway}
+            onReconcileClick={openReconcileModal}
+          />
+        </>
       )}
 
       {/* Single Manual Reconciliation Modal */}
@@ -484,12 +365,12 @@ export function OperationsPage() {
             {/* Transaction Details */}
             <div className="bg-neutral-50 p-4 rounded-lg space-y-2">
               <div className="flex justify-between">
-                <span className="text-sm text-neutral-500">Transaction ID</span>
+                <span className="text-sm text-neutral-500">Reference</span>
                 <span className="font-mono text-sm">{selectedTransaction.transaction_id}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-neutral-500">Gateway</span>
-                <span className="capitalize">{selectedTransaction.gateway}</span>
+                <span className="capitalize">{getBaseGateway(selectedTransaction.gateway)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-neutral-500">Amount</span>
@@ -501,12 +382,6 @@ export function OperationsPage() {
                       : selectedTransaction.amount
                         ? formatCurrency(selectedTransaction.amount)
                         : '-'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-neutral-500">Narration</span>
-                <span className="text-sm max-w-[60%] text-right">
-                  {selectedTransaction.narrative || '-'}
                 </span>
               </div>
             </div>

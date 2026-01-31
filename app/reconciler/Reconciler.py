@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.exceptions.exceptions import ReconciliationException, DbOperationException
 from app.dataProcessing.GatewayFileClass import GatewayFile
 from app.dataLoading.data_loader import DataLoader
-from app.sqlModels.transactionEntities import Transaction, TransactionType
+from app.sqlModels.transactionEntities import Transaction, TransactionType, ReconciliationCategory
 from app.sqlModels.batchEntities import Batch, BatchStatus
 from app.pydanticModels.transactionModels import TransactionCreate
 from app.upload.template_generator import (
@@ -42,7 +42,9 @@ RECONCILIATION_KEY_COLUMN = "Reconciliation Key"
 SOURCE_FILE_COLUMN = "Source File"
 BATCH_ID_COLUMN = "Batch Id"
 GATEWAY_COLUMN = "gateway"
+GATEWAY_TYPE_COLUMN = "gateway_type"
 TRANSACTION_TYPE_COLUMN = "transaction_type"
+RECONCILIATION_CATEGORY_COLUMN = "reconciliation_category"
 IS_MANUAL_COLUMN = "is_manually_reconciled"
 
 # Reconciliation status values
@@ -51,8 +53,9 @@ STATUS_UNRECONCILED = "unreconciled"
 
 # Reconciliation note for system auto-matched transactions
 SYSTEM_RECONCILED_NOTE = "System Reconciled"
-SYSTEM_RECONCILED_CREDIT_NOTE = "System Reconciled - Credit"
+SYSTEM_RECONCILED_DEPOSIT_NOTE = "System Reconciled - Deposit"
 SYSTEM_RECONCILED_CHARGE_NOTE = "System Reconciled - Charge"
+SYSTEM_RECONCILED_REFUND_NOTE = "Stored - Refund (Non-reconcilable)"
 
 
 class FileValidationResult:
@@ -103,7 +106,7 @@ class ReconciliationSummary:
         matched: int = 0,
         unmatched_external: int = 0,
         unmatched_internal: int = 0,
-        credits_count: int = 0,
+        deposits_count: int = 0,
         charges_count: int = 0,
     ):
         self.batch_id = batch_id
@@ -113,7 +116,7 @@ class ReconciliationSummary:
         self.matched = matched
         self.unmatched_external = unmatched_external
         self.unmatched_internal = unmatched_internal
-        self.credits_count = credits_count
+        self.deposits_count = deposits_count
         self.charges_count = charges_count
 
     def to_dict(self) -> dict:
@@ -126,7 +129,7 @@ class ReconciliationSummary:
                 "matched": self.matched,
                 "unmatched_external": self.unmatched_external,
                 "unmatched_internal": self.unmatched_internal,
-                "credits": self.credits_count,
+                "deposits": self.deposits_count,
                 "charges": self.charges_count,
             }
         }
@@ -191,7 +194,7 @@ class Reconciler:
         self.external_credits: Optional[pd.DataFrame] = None
         self.external_debits: Optional[pd.DataFrame] = None
         self.external_charges: Optional[pd.DataFrame] = None
-        self.internal_data: Optional[pd.DataFrame] = None
+        self.internal_payouts: Optional[pd.DataFrame] = None
 
         logger.info(
             f"Reconciler initialized",
@@ -201,6 +204,7 @@ class Reconciler:
                 "external_gateway_id": self.external_gateway_id,
                 "internal_gateway_id": self.internal_gateway_id,
                 "charge_keywords_count": len(self.charge_keywords),
+                "charge_keywords": self.charge_keywords,
             }
         )
 
@@ -364,17 +368,19 @@ class Reconciler:
         Args:
             df: DataFrame to add columns to.
             gateway_id: Full gateway identifier (e.g., "equity_external").
-            transaction_type: Transaction type (credit, debit, charge, payout).
+            transaction_type: Transaction type (deposit, debit, charge, payout, etc.).
             reconciliation_status: Initial reconciliation status.
             reconciliation_note: Optional reconciliation note.
             source_file: Source filename.
 
         Returns:
-            DataFrame with metadata columns added.
+            DataFrame with metadata columns added including enhanced discriminators.
         """
         df = df.copy()
         df[GATEWAY_COLUMN] = gateway_id
+        df[GATEWAY_TYPE_COLUMN] = Transaction.get_gateway_type(gateway_id)
         df[TRANSACTION_TYPE_COLUMN] = transaction_type
+        df[RECONCILIATION_CATEGORY_COLUMN] = Transaction.get_reconciliation_category(transaction_type)
         df[RECONCILIATION_STATUS_COLUMN] = reconciliation_status
         df[RECONCILIATION_NOTE_COLUMN] = reconciliation_note
         df[BATCH_ID_COLUMN] = self.batch_id
@@ -443,13 +449,13 @@ class Reconciler:
         # Load external data
         external_file = self._load_gateway_file(self.gateway, self.external_file)
 
-        # External credits - auto-reconciled
+        # External deposits (credits) - auto-reconciled
         self.external_credits = self._add_metadata_columns(
             external_file.get_credits(),
             self.external_gateway_id,
-            TransactionType.CREDIT.value,
+            TransactionType.DEPOSIT.value,
             STATUS_RECONCILED,
-            SYSTEM_RECONCILED_CREDIT_NOTE,
+            SYSTEM_RECONCILED_DEPOSIT_NOTE,
             self.external_file
         )
         self.external_credits = self._add_reconciliation_keys(
@@ -488,21 +494,17 @@ class Reconciler:
             self.internal_file
         )
 
-        # Internal records - need reconciliation
-        # For internal records, use whichever amount is non-zero
-        internal_df = internal_file.dataframe.copy()
-        self.internal_data = self._add_metadata_columns(
-            internal_df,
+        # Internal payouts (debits) - need reconciliation against external debits
+        self.internal_payouts = self._add_metadata_columns(
+            internal_file.get_payouts(),
             self.internal_gateway_id,
             TransactionType.PAYOUT.value,
             STATUS_UNRECONCILED,
             None,
             self.internal_file
         )
-
-        # Add keys using debit if present, otherwise credit
-        self.internal_data = self._add_reconciliation_keys(
-            self.internal_data, use_debit=True
+        self.internal_payouts = self._add_reconciliation_keys(
+            self.internal_payouts, use_debit=True
         )
 
         logger.info(
@@ -512,7 +514,7 @@ class Reconciler:
                 "external_credits": len(self.external_credits) if self.external_credits is not None else 0,
                 "external_debits": len(self.external_debits) if self.external_debits is not None else 0,
                 "external_charges": len(self.external_charges) if self.external_charges is not None else 0,
-                "internal_records": len(self.internal_data) if self.internal_data is not None else 0,
+                "internal_payouts": len(self.internal_payouts) if self.internal_payouts is not None else 0,
             }
         )
 
@@ -562,7 +564,7 @@ class Reconciler:
                 about which keys are duplicated and in which data source.
         """
         if (self.external_credits is None and self.external_debits is None and
-            self.external_charges is None and self.internal_data is None):
+            self.external_charges is None and self.internal_payouts is None):
             # Dataframes not loaded yet
             return
 
@@ -570,7 +572,7 @@ class Reconciler:
 
         # Check each dataframe for internal duplicates
         all_duplicates.extend(
-            self._find_duplicates_in_dataframe(self.external_credits, "External Credits")
+            self._find_duplicates_in_dataframe(self.external_credits, "External Deposits")
         )
         all_duplicates.extend(
             self._find_duplicates_in_dataframe(self.external_debits, "External Debits")
@@ -579,7 +581,7 @@ class Reconciler:
             self._find_duplicates_in_dataframe(self.external_charges, "External Charges")
         )
         all_duplicates.extend(
-            self._find_duplicates_in_dataframe(self.internal_data, "Internal Records")
+            self._find_duplicates_in_dataframe(self.internal_payouts, "Internal Payouts")
         )
 
         if all_duplicates:
@@ -631,7 +633,7 @@ class Reconciler:
     def reconcile(self) -> ReconciliationSummary:
         """
         Perform reconciliation by matching reconciliation keys
-        between external debits and internal records.
+        between external debits and internal payouts.
 
         Key format: {reference}|{amount}|{base_gateway}
 
@@ -640,11 +642,11 @@ class Reconciler:
         Returns:
             ReconciliationSummary with reconciliation results.
         """
-        if self.external_debits is None or self.internal_data is None:
+        if self.external_debits is None or self.internal_payouts is None:
             self.load_dataframes()
 
         external_df = self.external_debits.copy()
-        internal_df = self.internal_data.copy()
+        internal_df = self.internal_payouts.copy()
 
         # Get reconciliation keys (exclude those with "NA" reference)
         external_keys = set(
@@ -686,7 +688,7 @@ class Reconciler:
         external_df.loc[~external_matched_mask, RECONCILIATION_STATUS_COLUMN] = STATUS_UNRECONCILED
 
         self.external_debits = external_df
-        self.internal_data = internal_df
+        self.internal_payouts = internal_df
 
         # Calculate summary
         matched_count = len(external_df[external_df[RECONCILIATION_STATUS_COLUMN] == STATUS_RECONCILED])
@@ -712,7 +714,7 @@ class Reconciler:
             matched=matched_count,
             unmatched_external=unmatched_external,
             unmatched_internal=unmatched_internal,
-            credits_count=len(self.external_credits) if self.external_credits is not None else 0,
+            deposits_count=len(self.external_credits) if self.external_credits is not None else 0,
             charges_count=len(self.external_charges) if self.external_charges is not None else 0,
         )
 
@@ -733,19 +735,19 @@ class Reconciler:
         ].copy()
 
     def get_reconciled_internal(self) -> pd.DataFrame:
-        """Get internal records that were reconciled."""
-        if self.internal_data is None:
+        """Get internal payouts that were reconciled."""
+        if self.internal_payouts is None:
             self.reconcile()
-        return self.internal_data[
-            self.internal_data[RECONCILIATION_STATUS_COLUMN] == STATUS_RECONCILED
+        return self.internal_payouts[
+            self.internal_payouts[RECONCILIATION_STATUS_COLUMN] == STATUS_RECONCILED
         ].copy()
 
     def get_unreconciled_internal(self) -> pd.DataFrame:
-        """Get internal records that were not reconciled."""
-        if self.internal_data is None:
+        """Get internal payouts that were not reconciled."""
+        if self.internal_payouts is None:
             self.reconcile()
-        return self.internal_data[
-            self.internal_data[RECONCILIATION_STATUS_COLUMN] == STATUS_UNRECONCILED
+        return self.internal_payouts[
+            self.internal_payouts[RECONCILIATION_STATUS_COLUMN] == STATUS_UNRECONCILED
         ].copy()
 
     def _prepare_dataframe_for_save(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -762,7 +764,9 @@ class Reconciler:
         """
         columns = [
             GATEWAY_COLUMN,
+            GATEWAY_TYPE_COLUMN,
             TRANSACTION_TYPE_COLUMN,
+            RECONCILIATION_CATEGORY_COLUMN,
             DATE_COLUMN,
             TRANSACTION_ID_COLUMN,
             NARRATIVE_COLUMN,
@@ -790,6 +794,8 @@ class Reconciler:
 
         # Handle NaN in string columns - convert to None
         string_cols = [
+            GATEWAY_TYPE_COLUMN,
+            RECONCILIATION_CATEGORY_COLUMN,
             RECONCILIATION_NOTE_COLUMN,
             RECONCILIATION_KEY_COLUMN,
             SOURCE_FILE_COLUMN,
@@ -825,6 +831,77 @@ class Reconciler:
             return len(payload)
         except Exception as e:
             raise DbOperationException(f"Failed to save {description}: {e}")
+
+    def preview(self) -> dict:
+        """
+        Run reconciliation preview (dry run) without saving to database.
+
+        This allows users to review reconciliation results before committing.
+        Results are NOT persisted and will be lost if not saved.
+
+        Steps:
+        1. Validate batch exists and is pending
+        2. Validate required files exist
+        3. Load and process files
+        4. Validate no duplicate reconciliation keys
+        5. Perform reconciliation
+        6. Return results WITHOUT saving
+
+        Returns:
+            Dictionary with reconciliation preview results.
+
+        Raises:
+            ReconciliationException: If validation fails or duplicate keys detected.
+        """
+        # Step 1: Validate batch
+        self.validate_batch()
+
+        # Step 2: Validate files
+        self.validate_files()
+
+        # Step 3: Load data
+        self.load_dataframes()
+
+        # Step 4: Validate no duplicate reconciliation keys
+        self.validate_no_duplicate_keys()
+
+        # Step 5: Perform reconciliation
+        summary = self.reconcile()
+
+        # Calculate match rate
+        total_external = summary.total_external
+        match_rate = (
+            round((summary.matched / total_external) * 100, 1)
+            if total_external > 0 else 0.0
+        )
+
+        logger.info(
+            f"Reconciliation preview completed (dry run)",
+            extra={
+                "batch_id": self.batch_id,
+                "gateway": self.gateway,
+                "matched": summary.matched,
+                "match_rate": match_rate,
+            }
+        )
+
+        return {
+            "message": "Reconciliation preview completed (not saved)",
+            "batch_id": self.batch_id,
+            "gateway": self.gateway,
+            "is_preview": True,
+            **summary.to_dict(),
+            "insights": {
+                "total_external": summary.total_external,
+                "total_internal": summary.total_internal,
+                "matched": summary.matched,
+                "match_rate": match_rate,
+                "unreconciled_external": summary.unmatched_external,
+                "unreconciled_internal": summary.unmatched_internal,
+                "deposits": summary.deposits_count,
+                "charges": summary.charges_count,
+            }
+        }
 
     def run(self) -> dict:
         """
@@ -871,9 +948,10 @@ class Reconciler:
 
         # Step 7: Save results
         try:
-            credits_count = self._save_dataframe(
+            # Save external records
+            deposits_count = self._save_dataframe(
                 self.external_credits,
-                "external credits"
+                "external deposits"
             )
             debits_count = self._save_dataframe(
                 self.external_debits,
@@ -883,24 +961,28 @@ class Reconciler:
                 self.external_charges,
                 "external charges"
             )
-            internal_count = self._save_dataframe(
-                self.internal_data,
-                "internal transactions"
+
+            # Save internal records
+            payouts_count = self._save_dataframe(
+                self.internal_payouts,
+                "internal payouts"
             )
 
             self.db_session.commit()
 
-            total_saved = credits_count + debits_count + charges_count + internal_count
+            external_total = deposits_count + debits_count + charges_count
+            internal_total = payouts_count
+            total_saved = external_total + internal_total
 
             logger.info(
                 f"Reconciliation results saved",
                 extra={
                     "batch_id": self.batch_id,
                     "gateway": self.gateway,
-                    "credits_saved": credits_count,
+                    "deposits_saved": deposits_count,
                     "debits_saved": debits_count,
                     "charges_saved": charges_count,
-                    "internal_saved": internal_count,
+                    "payouts_saved": payouts_count,
                     "total_saved": total_saved,
                 }
             )
@@ -911,8 +993,12 @@ class Reconciler:
                 "gateway": self.gateway,
                 **summary.to_dict(),
                 "saved": {
-                    "external_records": credits_count + debits_count + charges_count,
-                    "internal_records": internal_count,
+                    "external_records": external_total,
+                    "internal_records": internal_total,
+                    "deposits": deposits_count,
+                    "debits": debits_count,
+                    "charges": charges_count,
+                    "payouts": payouts_count,
                     "total": total_saved,
                 }
             }

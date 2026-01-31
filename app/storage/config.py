@@ -1,7 +1,7 @@
-import os
 from enum import Enum
 from functools import lru_cache
 
+from app.config.settings import settings
 from app.storage.base import StorageBackend
 from app.storage.local_storage import LocalStorage
 from app.storage.gcs_storage import GcsStorage
@@ -12,27 +12,21 @@ class StorageType(Enum):
     GCS = "gcs"
 
 
-# Environment variables
-STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "local").lower()
-GCS_BUCKET = os.getenv("GCS_BUCKET", "uploads")
-LOCAL_UPLOADS_PATH = os.getenv("LOCAL_UPLOADS_PATH", "uploads")
-
-
 @lru_cache(maxsize=1)
 def get_storage() -> StorageBackend:
     """
     Factory function to get the appropriate storage backend based on environment.
 
     Uses STORAGE_BACKEND environment variable:
-    - "local" (default): Uses LocalStorage with LOCAL_UPLOADS_PATH
+    - "local": Uses LocalStorage with LOCAL_UPLOADS_PATH
     - "gcs": Uses GcsStorage with GCS_BUCKET
 
     Returns:
         StorageBackend instance configured for the current environment.
     """
-    if STORAGE_BACKEND == StorageType.GCS.value:
-        return GcsStorage(bucket=GCS_BUCKET)
-    return LocalStorage(base_path=LOCAL_UPLOADS_PATH)
+    if settings.STORAGE_BACKEND == StorageType.GCS.value:
+        return GcsStorage(bucket=settings.GCS_BUCKET)
+    return LocalStorage(base_path=settings.LOCAL_UPLOADS_PATH)
 
 
 def get_local_storage(base_path: str = None) -> LocalStorage:
@@ -45,7 +39,7 @@ def get_local_storage(base_path: str = None) -> LocalStorage:
     Returns:
         LocalStorage instance.
     """
-    return LocalStorage(base_path=base_path or LOCAL_UPLOADS_PATH)
+    return LocalStorage(base_path=base_path or settings.LOCAL_UPLOADS_PATH)
 
 
 def get_gcs_storage(bucket: str = None) -> GcsStorage:
@@ -58,4 +52,4 @@ def get_gcs_storage(bucket: str = None) -> GcsStorage:
     Returns:
         GcsStorage instance.
     """
-    return GcsStorage(bucket=bucket or GCS_BUCKET)
+    return GcsStorage(bucket=bucket or settings.GCS_BUCKET)

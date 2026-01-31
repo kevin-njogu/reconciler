@@ -1,44 +1,60 @@
 """
 Authentication configuration settings.
 
-Loads JWT and password policy settings from environment variables.
+Loads JWT, password policy, SMTP, OTP, and security settings from environment variables.
+All values are required and must be set in the .env file.
 """
-import os
+import logging
 import re
-from dotenv import load_dotenv
+
 from pydantic_settings import BaseSettings
 
-load_dotenv()
+logger = logging.getLogger("app.auth.config")
 
 
 class AuthSettings(BaseSettings):
     """Authentication-related settings."""
 
     # JWT Configuration
-    jwt_secret_key: str = os.getenv(
-        "JWT_SECRET_KEY",
-        "change-this-in-production-min-32-chars-secret-key"
-    )
-    jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = int(
-        os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
-    )
-    refresh_token_expire_days: int = int(
-        os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7")
-    )
+    jwt_secret_key: str
+    jwt_algorithm: str
+    access_token_expire_minutes: int
+    refresh_token_expire_hours: int
 
     # Super Admin Creation Secret
-    super_admin_secret: str = os.getenv(
-        "SUPER_ADMIN_SECRET",
-        "super-admin-creation-secret-change-this"
-    )
+    super_admin_secret: str
+
+    # SMTP Email Configuration
+    smtp_host: str
+    smtp_port: int
+    smtp_username: str
+    smtp_password: str
+    smtp_from_email: str
+    smtp_from_name: str
+    smtp_use_tls: bool
+
+    # Email Domain Restriction
+    allowed_email_domain: str
+
+    # OTP Configuration
+    otp_login_lifetime_seconds: int
+    otp_welcome_lifetime_seconds: int
+    otp_forgot_password_lifetime_seconds: int
+    otp_max_attempts: int
+    otp_resend_cooldown_seconds: int
+
+    # Account Security
+    max_failed_login_attempts: int
+    account_lockout_minutes: int
+    password_expiry_days: int
+    password_history_count: int
 
     # Password Policy
-    password_min_length: int = 8
-    password_require_uppercase: bool = True
-    password_require_lowercase: bool = True
-    password_require_digit: bool = True
-    password_require_special: bool = True
+    password_min_length: int
+    password_require_uppercase: bool
+    password_require_lowercase: bool
+    password_require_digit: bool
+    password_require_special: bool
 
     class Config:
         env_file = ".env"
@@ -46,6 +62,28 @@ class AuthSettings(BaseSettings):
 
 
 auth_settings = AuthSettings()
+
+
+def validate_auth_config():
+    """
+    Validate critical auth configuration on startup.
+
+    Raises RuntimeError if required secrets are insecure.
+    """
+    errors = []
+
+    if len(auth_settings.jwt_secret_key) < 32:
+        errors.append("JWT_SECRET_KEY must be at least 32 characters")
+
+    if len(auth_settings.super_admin_secret) < 16:
+        errors.append("SUPER_ADMIN_SECRET must be at least 16 characters")
+
+    if errors:
+        for error in errors:
+            logger.critical("Auth configuration error: %s", error)
+        raise RuntimeError(
+            "Auth configuration validation failed:\n- " + "\n- ".join(errors)
+        )
 
 
 def validate_password_strength(password: str) -> tuple[bool, str]:

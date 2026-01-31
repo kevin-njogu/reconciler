@@ -2,13 +2,39 @@ import { apiClient } from './client';
 import type {
   AvailableGatewaysResponse,
   ReconciliationResult,
-  ReconciliationSummary,
   ReconciliationSaveResponse,
 } from '@/types';
 
 export interface ReconcileParams {
   batch_id: string;
   gateway: string;
+}
+
+// Preview result type (dry run)
+export interface ReconciliationPreviewResult {
+  message: string;
+  batch_id: string;
+  gateway: string;
+  is_preview: boolean;
+  summary: {
+    total_external: number;
+    total_internal: number;
+    matched: number;
+    unmatched_external: number;
+    unmatched_internal: number;
+    deposits: number;
+    charges: number;
+  };
+  insights: {
+    total_external: number;
+    total_internal: number;
+    matched: number;
+    match_rate: number;
+    unreconciled_external: number;
+    unreconciled_internal: number;
+    deposits: number;
+    charges: number;
+  };
 }
 
 // Legacy params for backwards compatibility
@@ -31,6 +57,20 @@ export const reconciliationApi = {
   },
 
   /**
+   * Run reconciliation preview (dry run) without saving.
+   * Returns insights for review before committing.
+   */
+  preview: async (params: ReconcileParams): Promise<ReconciliationPreviewResult> => {
+    const response = await apiClient.post<ReconciliationPreviewResult>('/reconcile/preview', null, {
+      params: {
+        batch_id: params.batch_id,
+        gateway: params.gateway,
+      },
+    });
+    return response.data;
+  },
+
+  /**
    * Run reconciliation for a batch and gateway.
    * This validates, reconciles, and saves in a single operation.
    */
@@ -45,32 +85,6 @@ export const reconciliationApi = {
   },
 
   // Legacy methods for backwards compatibility
-
-  /**
-   * @deprecated Use reconcile() instead
-   */
-  preview: async (params: ReconciliationParams): Promise<ReconciliationSummary> => {
-    const response = await apiClient.post<ReconciliationSummary>('/reconcile', null, {
-      params: {
-        batch_id: params.batch_id,
-        gateway: params.external_gateway,
-      },
-    });
-    // Transform new response to legacy format
-    const data = response.data as unknown as ReconciliationResult;
-    return {
-      batch_id: data.batch_id,
-      external_gateway: data.gateway,
-      internal_gateway: `workpay_${data.gateway}`,
-      total_external_debits: data.summary?.total_external || 0,
-      total_internal_records: data.summary?.total_internal || 0,
-      matched: data.summary?.matched || 0,
-      unmatched_external: data.summary?.unmatched_external || 0,
-      unmatched_internal: data.summary?.unmatched_internal || 0,
-      total_credits: data.summary?.credits || 0,
-      total_charges: data.summary?.charges || 0,
-    };
-  },
 
   /**
    * @deprecated Use reconcile() instead

@@ -8,6 +8,7 @@ Handles manual reconciliation and authorization workflows:
 """
 from datetime import datetime
 from typing import Optional, List
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -116,7 +117,19 @@ async def get_unreconciled_transactions(
     )
 
     if gateway:
-        query = query.filter(Transaction.gateway == gateway.lower())
+        # Support both full gateway names (e.g., "mpesa_external") and base names (e.g., "mpesa")
+        gateway_lower = gateway.lower()
+        if gateway_lower.endswith('_external') or gateway_lower.endswith('_internal'):
+            # Full gateway name - exact match
+            query = query.filter(Transaction.gateway == gateway_lower)
+        else:
+            # Base gateway name - match both _external and _internal variants
+            query = query.filter(
+                or_(
+                    Transaction.gateway == f"{gateway_lower}_external",
+                    Transaction.gateway == f"{gateway_lower}_internal"
+                )
+            )
 
     transactions = query.order_by(Transaction.date.desc()).all()
 
@@ -128,9 +141,15 @@ async def get_unreconciled_transactions(
             grouped[gw] = []
         grouped[gw].append(transaction_to_response(txn))
 
-    # Get available gateways for this batch
+    # Get available gateways for this batch (only those with unreconciled transactions)
     gateway_query = db.query(Transaction.gateway).filter(
-        Transaction.batch_id == batch_id
+        Transaction.batch_id == batch_id,
+        Transaction.reconciliation_status == ReconciliationStatus.UNRECONCILED.value,
+        # Exclude transactions already pending authorization
+        or_(
+            Transaction.authorization_status.is_(None),
+            Transaction.authorization_status == AuthorizationStatus.REJECTED.value
+        )
     ).distinct().all()
     available_gateways = [g[0] for g in gateway_query]
 
@@ -172,7 +191,19 @@ async def get_pending_authorization(
         query = query.filter(Transaction.batch_id == batch_id)
 
     if gateway:
-        query = query.filter(Transaction.gateway == gateway.lower())
+        # Support both full gateway names (e.g., "mpesa_external") and base names (e.g., "mpesa")
+        gateway_lower = gateway.lower()
+        if gateway_lower.endswith('_external') or gateway_lower.endswith('_internal'):
+            # Full gateway name - exact match
+            query = query.filter(Transaction.gateway == gateway_lower)
+        else:
+            # Base gateway name - match both _external and _internal variants
+            query = query.filter(
+                or_(
+                    Transaction.gateway == f"{gateway_lower}_external",
+                    Transaction.gateway == f"{gateway_lower}_internal"
+                )
+            )
 
     transactions = query.order_by(Transaction.manual_recon_at.desc()).all()
 
@@ -242,7 +273,7 @@ async def manual_reconcile(
     transaction.is_manually_reconciled = "true"
     transaction.manual_recon_note = request_body.note
     transaction.manual_recon_by = current_user.id
-    transaction.manual_recon_at = datetime.utcnow()
+    transaction.manual_recon_at = datetime.now(ZoneInfo("Africa/Nairobi"))
     transaction.authorization_status = AuthorizationStatus.PENDING.value
 
     # Create audit log
@@ -322,7 +353,7 @@ async def manual_reconcile_bulk(
         )
 
     # Update all transactions
-    now = datetime.utcnow()
+    now = datetime.now(ZoneInfo("Africa/Nairobi"))
     for txn in transactions:
         txn.is_manually_reconciled = "true"
         txn.manual_recon_note = note.strip()
@@ -408,7 +439,7 @@ async def authorize_transaction(
         message = "Transaction authorization rejected"
 
     transaction.authorized_by = current_user.id
-    transaction.authorized_at = datetime.utcnow()
+    transaction.authorized_at = datetime.now(ZoneInfo("Africa/Nairobi"))
     transaction.authorization_note = request_body.note
 
     # Create audit log
@@ -489,7 +520,7 @@ async def authorize_bulk(
         )
 
     # Update all transactions
-    now = datetime.utcnow()
+    now = datetime.now(ZoneInfo("Africa/Nairobi"))
     for txn in transactions:
         if action == 'authorize':
             txn.authorization_status = AuthorizationStatus.AUTHORIZED.value

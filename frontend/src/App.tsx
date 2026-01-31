@@ -4,10 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores';
 import { Layout, ProtectedRoute } from '@/components/layout';
 import { ToastContainer } from '@/components/ui/Toast';
-import { PageLoading } from '@/components/ui';
+import { PageLoading, ErrorBoundary } from '@/components/ui';
 
 // Feature pages
-import { LoginPage, ChangePasswordPage } from '@/features/auth';
+import { LoginPage, ChangePasswordPage, ForgotPasswordPage } from '@/features/auth';
 import { DashboardPage } from '@/features/dashboard';
 import { UsersPage } from '@/features/users';
 import { BatchesPage, BatchDetailPage } from '@/features/batches';
@@ -17,13 +17,15 @@ import { ReportsPage } from '@/features/reports';
 import { GatewaysPage, GatewayApprovalPage } from '@/features/gateways';
 import { OperationsPage, AuthorizationPage } from '@/features/operations';
 import { TransactionsPage } from '@/features/transactions';
+import { SettingsPage } from '@/features/settings';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
+      staleTime: 0, // Always consider data stale - ensures instant updates
       retry: 1,
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: true, // Refetch when user returns to tab
+      refetchOnMount: true, // Refetch when component mounts
     },
   },
 });
@@ -49,6 +51,10 @@ function AppRoutes() {
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
+      />
+      <Route
+        path="/forgot-password"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <ForgotPasswordPage />}
       />
 
       {/* Protected routes with layout */}
@@ -104,6 +110,7 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+        <Route path="/settings" element={<SettingsPage />} />
 
         {/* Super Admin routes */}
         <Route
@@ -124,11 +131,13 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AppRoutes />
-        <ToastContainer />
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AppRoutes />
+          <ToastContainer />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

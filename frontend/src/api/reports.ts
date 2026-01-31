@@ -2,20 +2,24 @@ import { apiClient } from './client';
 
 export type ReportFormat = 'xlsx' | 'csv';
 
-export interface ClosedBatch {
+export interface ReportBatch {
   batch_id: string;
   batch_db_id: number;
   status: string;
   description?: string;
   created_at: string;
-  closed_at: string;
+  closed_at?: string;
   created_by?: string;
 }
 
-export interface ClosedBatchesResponse {
-  batches: ClosedBatch[];
+export interface BatchesResponse {
+  batches: ReportBatch[];
   count: number;
 }
+
+// Legacy alias for backwards compatibility
+export type ClosedBatch = ReportBatch;
+export type ClosedBatchesResponse = BatchesResponse;
 
 export interface AvailableGateway {
   gateway: string;
@@ -30,11 +34,26 @@ export interface AvailableGatewaysResponse {
 
 export const reportsApi = {
   /**
-   * Get closed batches for report generation.
+   * Get batches for report generation.
+   * Returns latest 5 by default, supports search by batch ID and status filter.
+   */
+  getBatches: async (
+    search?: string,
+    limit: number = 5,
+    status?: 'pending' | 'completed' | 'all'
+  ): Promise<BatchesResponse> => {
+    const response = await apiClient.get<BatchesResponse>('/reports/batches', {
+      params: { search, limit, status },
+    });
+    return response.data;
+  },
+
+  /**
+   * Get closed batches for report generation (legacy endpoint).
    * Returns latest 5 by default, supports search by batch ID.
    */
-  getClosedBatches: async (search?: string, limit: number = 5): Promise<ClosedBatchesResponse> => {
-    const response = await apiClient.get<ClosedBatchesResponse>('/reports/closed-batches', {
+  getClosedBatches: async (search?: string, limit: number = 5): Promise<BatchesResponse> => {
+    const response = await apiClient.get<BatchesResponse>('/reports/closed-batches', {
       params: { search, limit },
     });
     return response.data;

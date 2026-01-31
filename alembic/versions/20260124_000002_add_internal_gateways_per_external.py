@@ -11,6 +11,7 @@ Changes:
 from alembic import op
 import sqlalchemy as sa
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 
 # revision identifiers, used by Alembic.
@@ -64,7 +65,7 @@ def upgrade() -> None:
 
     # Insert new per-external internal gateways (skip if already exist)
     conn = op.get_bind()
-    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    now = datetime.now(ZoneInfo("Africa/Nairobi")).strftime('%Y-%m-%d %H:%M:%S')
 
     for gw in NEW_INTERNAL_GATEWAYS:
         existing = conn.execute(

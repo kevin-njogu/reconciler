@@ -1,8 +1,28 @@
+import re
 from pathlib import Path
 from typing import List, Optional, BinaryIO
 
 from app.exceptions.exceptions import FileUploadException, ReadFileException
 from app.storage.base import StorageBackend
+
+# Regex for valid path components (alphanumeric, hyphens, underscores, dots)
+_SAFE_NAME_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._-]*$')
+
+
+def _validate_path_component(name: str, component_type: str = "name") -> None:
+    """
+    Validate a path component to prevent path traversal attacks.
+
+    Rejects any component containing '..' or '/' or other dangerous patterns.
+    """
+    if not name:
+        raise ValueError(f"Empty {component_type} is not allowed")
+    if '..' in name or '/' in name or '\\' in name:
+        raise ValueError(f"Invalid {component_type}: path traversal not allowed")
+    if not _SAFE_NAME_RE.match(name):
+        raise ValueError(
+            f"Invalid {component_type}: only alphanumeric characters, hyphens, underscores, and dots are allowed"
+        )
 
 
 class LocalStorage(StorageBackend):
@@ -12,17 +32,27 @@ class LocalStorage(StorageBackend):
     """
 
     def __init__(self, base_path: str = "uploads"):
-        self.base_path = Path(base_path)
+        self.base_path = Path(base_path).resolve()
 
     def _get_batch_path(self, batch_id: str) -> Path:
         """Get the full path for a batch directory."""
-        return self.base_path / batch_id
+        _validate_path_component(batch_id, "batch_id")
+        path = (self.base_path / batch_id).resolve()
+        if not str(path).startswith(str(self.base_path)):
+            raise ValueError("Path traversal detected in batch_id")
+        return path
 
     def _get_file_path(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> Path:
         """Get the full path for a file, optionally within a gateway subdirectory."""
+        _validate_path_component(filename, "filename")
         if gateway:
-            return self._get_batch_path(batch_id) / gateway / filename
-        return self._get_batch_path(batch_id) / filename
+            _validate_path_component(gateway, "gateway")
+            path = (self._get_batch_path(batch_id) / gateway / filename).resolve()
+        else:
+            path = (self._get_batch_path(batch_id) / filename).resolve()
+        if not str(path).startswith(str(self.base_path)):
+            raise ValueError("Path traversal detected")
+        return path
 
     def save_file(self, batch_id: str, filename: str, content: bytes, gateway: Optional[str] = None) -> str:
         """

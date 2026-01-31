@@ -1,23 +1,21 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { FileSpreadsheet, FileText, Search, Download, Info } from 'lucide-react';
+import { FileSpreadsheet, FileText, Download, FileDown } from 'lucide-react';
 import { reportsApi, getErrorMessage } from '@/api';
-import type { ReportFormat, ClosedBatch, AvailableGateway } from '@/api/reports';
+import type { ReportFormat } from '@/api/reports';
 import {
   Button,
   Card,
   CardHeader,
   CardTitle,
-  CardDescription,
   CardContent,
-  Input,
   Alert,
   PageLoading,
   Badge,
 } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
-import { downloadFile, formatDateTime, cn } from '@/lib/utils';
+import { downloadFile, cn } from '@/lib/utils';
 
 export function ReportsPage() {
   const [searchParams] = useSearchParams();
@@ -29,12 +27,15 @@ export function ReportsPage() {
   const [selectedFormat, setSelectedFormat] = useState<ReportFormat>('xlsx');
   const [batchSearch, setBatchSearch] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
-  const [showAllBatches, setShowAllBatches] = useState(false);
+  const [batchDropdownOpen, setBatchDropdownOpen] = useState(false);
 
-  // Fetch closed batches (latest 5 or search results)
-  const { data: batchesData, isLoading: batchesLoading, refetch: refetchBatches } = useQuery({
-    queryKey: ['closedBatches', batchSearch],
-    queryFn: () => reportsApi.getClosedBatches(batchSearch || undefined, showAllBatches ? 50 : 5),
+  // Fetch batches (latest 5 or search results)
+  const {
+    data: batchesData,
+    isLoading: batchesLoading,
+  } = useQuery({
+    queryKey: ['reportBatches', batchSearch],
+    queryFn: () => reportsApi.getBatches(batchSearch || undefined, batchSearch ? 50 : 5),
   });
 
   // Fetch available gateways when batch is selected
@@ -44,13 +45,13 @@ export function ReportsPage() {
     enabled: !!selectedBatch,
   });
 
-  const closedBatches = batchesData?.batches || [];
+  const batches = batchesData?.batches || [];
   const availableGateways = gatewaysData?.gateways || [];
 
   // Find selected batch details
   const selectedBatchData = useMemo(() => {
-    return closedBatches.find((b) => b.batch_id === selectedBatch);
-  }, [closedBatches, selectedBatch]);
+    return batches.find((b) => b.batch_id === selectedBatch);
+  }, [batches, selectedBatch]);
 
   // Find selected gateway details
   const selectedGatewayData = useMemo(() => {
@@ -62,10 +63,23 @@ export function ReportsPage() {
     setSelectedGateway('');
   }, [selectedBatch]);
 
-  // Refetch batches when search changes
+  // Close dropdown when clicking outside
   useEffect(() => {
-    refetchBatches();
-  }, [batchSearch, showAllBatches, refetchBatches]);
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.batch-dropdown')) {
+        setBatchDropdownOpen(false);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  const handleBatchSelect = (batchId: string) => {
+    setSelectedBatch(batchId);
+    setBatchDropdownOpen(false);
+    setBatchSearch('');
+  };
 
   const handleDownload = async () => {
     if (!selectedBatch || !selectedGateway) {
@@ -88,232 +102,236 @@ export function ReportsPage() {
 
   const canDownload = selectedBatch && selectedGateway;
 
+  // Build unified gateway options
+  const getBaseGateway = (gateway: string) => {
+    return gateway.replace(/_internal$/, '').replace(/_external$/, '');
+  };
+
+  const uniqueBaseGateways = useMemo(() => {
+    const gateways = availableGateways.map((g) => getBaseGateway(g.gateway));
+    return Array.from(new Set(gateways));
+  }, [availableGateways]);
+
   if (batchesLoading) return <PageLoading />;
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
-        <p className="text-gray-500 mt-1">Download reconciliation reports for closed batches</p>
+        <p className="text-gray-500 mt-1">Download reconciliation reports for any batch</p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Generate Reconciliation Report</CardTitle>
-          <CardDescription>
-            Select a closed batch and gateway to download the reconciliation report
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {closedBatches.length === 0 && !batchSearch ? (
-            <Alert variant="warning" title="No closed batches">
-              Complete a reconciliation and close the batch first to generate reports.
-            </Alert>
-          ) : (
-            <>
-              {/* Step 1: Select Batch */}
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700">
-                  Step 1: Select Batch
-                </label>
-
-                {/* Batch Search */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    placeholder="Search by batch ID..."
-                    value={batchSearch}
-                    onChange={(e) => setBatchSearch(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-
-                {/* Batch List */}
-                <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
-                  {closedBatches.length === 0 ? (
-                    <div className="p-4 text-center text-gray-500">
-                      No batches found matching "{batchSearch}"
-                    </div>
-                  ) : (
-                    closedBatches.map((batch) => (
-                      <button
-                        key={batch.batch_id}
-                        type="button"
-                        onClick={() => setSelectedBatch(batch.batch_id)}
-                        className={cn(
-                          'w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors',
-                          selectedBatch === batch.batch_id && 'bg-primary-50 border-l-4 border-l-primary-500'
-                        )}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <span className="font-mono font-medium text-gray-900">
-                              {batch.batch_id}
-                            </span>
-                            {batch.description && (
-                              <p className="text-xs text-gray-500 mt-0.5 truncate max-w-xs">
-                                {batch.description}
-                              </p>
-                            )}
-                          </div>
-                          <div className="text-right text-xs text-gray-500">
-                            <p>Closed: {batch.closed_at ? formatDateTime(batch.closed_at) : '-'}</p>
-                            <p>By: {batch.created_by || '-'}</p>
-                          </div>
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-
-                {/* Show more batches toggle */}
-                {!batchSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllBatches(!showAllBatches)}
-                    className="text-sm text-primary-600 hover:text-primary-700"
-                  >
-                    {showAllBatches ? 'Show less' : 'Show more batches...'}
-                  </button>
-                )}
-              </div>
-
-              {/* Step 2: Select Gateway */}
-              {selectedBatch && (
-                <div className="space-y-3">
+      {/* Centered Half-Page Card */}
+      <div className="flex justify-center">
+        <Card className="w-full max-w-xl">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2">
+              <FileDown className="h-5 w-5 text-primary-600" />
+              Generate Report
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {batches.length === 0 && !batchSearch ? (
+              <Alert variant="warning" title="No batches">
+                Create a batch and run reconciliation first to generate reports.
+              </Alert>
+            ) : (
+              <>
+                {/* Batch Selection with Search */}
+                <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    Step 2: Select Gateway
+                    Batch
                   </label>
-
-                  {gatewaysLoading ? (
-                    <div className="p-4 text-center text-gray-500">Loading gateways...</div>
-                  ) : availableGateways.length === 0 ? (
-                    <Alert variant="warning" title="No gateways found">
-                      No transactions found for this batch.
-                    </Alert>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                      {availableGateways.map((gw) => (
-                        <button
-                          key={gw.gateway}
-                          type="button"
-                          onClick={() => setSelectedGateway(gw.gateway)}
-                          className={cn(
-                            'p-4 border rounded-lg text-left hover:bg-gray-50 transition-colors',
-                            selectedGateway === gw.gateway && 'bg-primary-50 border-primary-500 ring-1 ring-primary-500'
-                          )}
-                        >
-                          <div className="font-medium text-gray-900">{gw.display_name}</div>
-                          <div className="text-sm text-gray-500 mt-1">
-                            {gw.transaction_count.toLocaleString()} transactions
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Step 3: Select Format */}
-              {selectedGateway && (
-                <div className="space-y-3">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Step 3: Select Format
-                  </label>
-                  <div className="flex gap-3">
+                  <div className="relative batch-dropdown">
                     <button
                       type="button"
-                      onClick={() => setSelectedFormat('xlsx')}
+                      onClick={() => setBatchDropdownOpen(!batchDropdownOpen)}
                       className={cn(
-                        'flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors',
+                        'w-full px-3 py-2 text-left border rounded-lg bg-white',
+                        'focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400',
+                        'flex items-center justify-between',
+                        batchDropdownOpen && 'ring-2 ring-primary-400 border-primary-400'
+                      )}
+                    >
+                      <span className={selectedBatch ? 'text-gray-900 font-mono' : 'text-gray-500'}>
+                        {selectedBatch || 'Select a batch...'}
+                      </span>
+                      <svg
+                        className={cn('h-4 w-4 text-gray-400 transition-transform', batchDropdownOpen && 'rotate-180')}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {batchDropdownOpen && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg">
+                        {/* Search Input */}
+                        <div className="p-2 border-b">
+                          <input
+                            type="text"
+                            placeholder="Search batch ID..."
+                            value={batchSearch}
+                            onChange={(e) => setBatchSearch(e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-400"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+
+                        {/* Batch List */}
+                        <div className="max-h-48 overflow-y-auto">
+                          {batches.length === 0 ? (
+                            <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                              No batches found
+                            </div>
+                          ) : (
+                            batches.map((batch) => (
+                              <button
+                                key={batch.batch_id}
+                                type="button"
+                                onClick={() => handleBatchSelect(batch.batch_id)}
+                                className={cn(
+                                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between',
+                                  selectedBatch === batch.batch_id && 'bg-primary-50 text-primary-700'
+                                )}
+                              >
+                                <span className="font-mono">{batch.batch_id}</span>
+                                <Badge
+                                  variant={batch.status === 'completed' ? 'success' : 'warning'}
+                                  className="text-xs ml-2"
+                                >
+                                  {batch.status === 'completed' ? 'Closed' : 'Pending'}
+                                </Badge>
+                              </button>
+                            ))
+                          )}
+                        </div>
+
+                        {!batchSearch && batches.length === 5 && (
+                          <div className="px-4 py-2 text-xs text-gray-500 border-t bg-gray-50">
+                            Showing latest 5 batches. Search to find more.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Gateway Selection */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Gateway
+                  </label>
+                  <select
+                    value={selectedGateway}
+                    onChange={(e) => setSelectedGateway(e.target.value)}
+                    disabled={!selectedBatch || gatewaysLoading}
+                    className={cn(
+                      'w-full px-3 py-2 border rounded-lg bg-white',
+                      'focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400',
+                      'disabled:bg-gray-100 disabled:cursor-not-allowed'
+                    )}
+                  >
+                    <option value="">
+                      {!selectedBatch
+                        ? 'Select batch first'
+                        : gatewaysLoading
+                          ? 'Loading gateways...'
+                          : 'Select gateway...'}
+                    </option>
+                    {uniqueBaseGateways.map((gw) => (
+                      <option key={gw} value={gw}>
+                        {gw.charAt(0).toUpperCase() + gw.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Format Selection (Radio Buttons) */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Format
+                  </label>
+                  <div className="flex gap-4">
+                    <label
+                      className={cn(
+                        'flex items-center gap-2 px-4 py-2 border rounded-lg cursor-pointer transition-colors',
                         selectedFormat === 'xlsx'
                           ? 'bg-primary-50 border-primary-500 text-primary-700'
-                          : 'hover:bg-gray-50'
+                          : 'bg-white hover:bg-gray-50'
                       )}
                     >
-                      <FileSpreadsheet className="h-5 w-5" />
-                      <span>Excel (.xlsx)</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedFormat('csv')}
+                      <input
+                        type="radio"
+                        name="format"
+                        value="xlsx"
+                        checked={selectedFormat === 'xlsx'}
+                        onChange={() => setSelectedFormat('xlsx')}
+                        className="sr-only"
+                      />
+                      <FileSpreadsheet className="h-4 w-4" />
+                      <span className="text-sm font-medium">Excel (.xlsx)</span>
+                    </label>
+                    <label
                       className={cn(
-                        'flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors',
+                        'flex items-center gap-2 px-4 py-2 border rounded-lg cursor-pointer transition-colors',
                         selectedFormat === 'csv'
                           ? 'bg-primary-50 border-primary-500 text-primary-700'
-                          : 'hover:bg-gray-50'
+                          : 'bg-white hover:bg-gray-50'
                       )}
                     >
-                      <FileText className="h-5 w-5" />
-                      <span>CSV (.csv)</span>
-                    </button>
+                      <input
+                        type="radio"
+                        name="format"
+                        value="csv"
+                        checked={selectedFormat === 'csv'}
+                        onChange={() => setSelectedFormat('csv')}
+                        className="sr-only"
+                      />
+                      <FileText className="h-4 w-4" />
+                      <span className="text-sm font-medium">CSV (.csv)</span>
+                    </label>
                   </div>
                 </div>
-              )}
 
-              {/* Selection Summary */}
-              {(selectedBatch || selectedGateway) && (
-                <div className="p-4 bg-gray-50 rounded-lg space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                    <Info className="h-4 w-4" />
-                    Report Summary
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-500">Batch:</span>{' '}
-                      <span className="font-mono font-medium">
-                        {selectedBatch || <span className="text-gray-400">Not selected</span>}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Gateway:</span>{' '}
-                      <span className="font-medium">
-                        {selectedGatewayData?.display_name || <span className="text-gray-400">Not selected</span>}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Format:</span>{' '}
-                      <span className="font-medium uppercase">{selectedFormat}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Report Columns Info */}
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-start gap-3">
-                  <Info className="h-5 w-5 text-blue-600 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-blue-800">Report Columns</p>
-                    <p className="text-sm text-blue-700 mt-1">
-                      Date, Transaction Reference, Details, Debit, Credit, Reconciliation Status, Reconciliation Key, Batch ID
+                {/* Report Columns Info */}
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-xs font-medium text-blue-800 mb-1">Report Columns</p>
+                  <p className="text-xs text-blue-700">
+                    Date, Transaction Reference, Details, Debit, Credit, Reconciliation Status, Reconciliation Note, Reconciliation Key, Batch ID
+                  </p>
+                  {selectedFormat === 'xlsx' && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      Excel report includes separate sheets for external debits, internal debits, credits/deposits, and charges.
                     </p>
-                  </div>
+                  )}
                 </div>
-              </div>
 
-              {/* Download Button */}
-              <div className="pt-4 border-t">
+                {/* Download Button */}
                 <Button
                   onClick={handleDownload}
                   disabled={!canDownload || isDownloading}
                   isLoading={isDownloading}
-                  className="w-full sm:w-auto"
+                  className="w-full"
                   size="lg"
                 >
                   <Download className="h-5 w-5 mr-2" />
                   Download Report
                 </Button>
+
                 {!canDownload && (
-                  <p className="text-sm text-gray-500 mt-2">
+                  <p className="text-xs text-gray-500 text-center">
                     Select both a batch and gateway to enable download
                   </p>
                 )}
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

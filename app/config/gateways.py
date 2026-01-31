@@ -6,9 +6,12 @@ Gateways can be managed via API or by seeding defaults on startup.
 
 Default gateways are provided as fallback when database is empty.
 """
+import logging
 from typing import Dict, List, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+
+logger = logging.getLogger("app.config.gateways")
 
 
 # ============================================================================
@@ -269,19 +272,128 @@ def get_all_upload_gateways(db_session: Optional[Session] = None) -> List[str]:
     Get all valid gateway names for file uploads.
 
     Returns external gateways (equity, mpesa, etc.) and internal gateways
-    (workpay_equity, workpay_mpesa, etc.) directly from the database.
+    (workpay_equity, workpay_mpesa, etc.) from both legacy and unified systems.
+
+    Checks:
+    1. Legacy gateway_configs table (for backward compatibility)
+    2. Unified gateway_file_configs table (new system)
 
     The database is the single source of truth - no gateway name generation.
     """
-    return get_external_gateways(db_session) + get_internal_gateways(db_session)
+    gateways = set()
+
+    # Get from legacy system
+    legacy_gateways = get_external_gateways(db_session) + get_internal_gateways(db_session)
+    gateways.update(legacy_gateways)
+
+    # Get from unified system (gateway_file_configs table)
+    if db_session:
+        from app.sqlModels.gatewayEntities import GatewayFileConfig
+        stmt = select(GatewayFileConfig.name).where(GatewayFileConfig.is_active == True)
+        unified_configs = db_session.execute(stmt).scalars().all()
+        gateways.update(unified_configs)
+
+    return list(gateways)
+
+
+def get_keywords_from_centralized_table(
+    keyword_type: str,
+    gateway_name: Optional[str] = None,
+    db_session: Optional[Session] = None
+) -> List[str]:
+    """
+    Get keywords from the centralized reconciliation_keywords table.
+
+    This is the primary source of keywords for reconciliation.
+    Keywords can be:
+    - Global: gateway_id is NULL (applies to all gateways)
+    - Gateway-specific: gateway_id points to a specific gateway
+
+    Args:
+        keyword_type: Type of keyword (charge, reversal)
+        gateway_name: Optional gateway name for gateway-specific keywords
+        db_session: Database session
+
+    Returns:
+        List of keyword strings
+    """
+    if not db_session:
+        logger.debug(f"No db_session provided, returning empty keywords for type {keyword_type}")
+        return []
+
+    try:
+        from app.sqlModels.settingsEntities import ReconciliationKeyword
+        from app.sqlModels.gatewayEntities import GatewayConfig
+
+        # Get global keywords (gateway_id is NULL)
+        stmt = select(ReconciliationKeyword.keyword).where(
+            ReconciliationKeyword.keyword_type == keyword_type,
+            ReconciliationKeyword.is_active == True,
+            ReconciliationKeyword.gateway_id == None
+        )
+        global_keywords = list(db_session.execute(stmt).scalars().all())
+        logger.debug(f"Found {len(global_keywords)} global {keyword_type} keywords: {global_keywords}")
+
+        # Get gateway-specific keywords if gateway_name is provided
+        gateway_keywords = []
+        if gateway_name:
+            # Find the gateway ID
+            gateway_stmt = select(GatewayConfig.id).where(
+                GatewayConfig.name == gateway_name.lower(),
+                GatewayConfig.is_active == True
+            )
+            gateway_id = db_session.execute(gateway_stmt).scalar_one_or_none()
+
+            if gateway_id:
+                kw_stmt = select(ReconciliationKeyword.keyword).where(
+                    ReconciliationKeyword.keyword_type == keyword_type,
+                    ReconciliationKeyword.is_active == True,
+                    ReconciliationKeyword.gateway_id == gateway_id
+                )
+                gateway_keywords = list(db_session.execute(kw_stmt).scalars().all())
+                logger.debug(f"Found {len(gateway_keywords)} {keyword_type} keywords for gateway {gateway_name}: {gateway_keywords}")
+
+        # Combine global and gateway-specific keywords
+        all_keywords = list(set(global_keywords + gateway_keywords))
+        logger.info(f"Using {len(all_keywords)} {keyword_type} keywords for gateway {gateway_name}: {all_keywords}")
+        return all_keywords
+
+    except Exception as e:
+        logger.warning(f"Error fetching keywords from centralized table: {e}")
+        return []
 
 
 def get_charge_keywords(gateway: str, db_session: Optional[Session] = None) -> List[str]:
-    """Get charge keywords for a gateway."""
-    gateways = get_all_gateways(db_session)
+    """
+    Get charge keywords for a gateway.
+
+    Checks in order:
+    1. Centralized reconciliation_keywords table (primary source)
+    2. Legacy per-gateway configuration (fallback)
+
+    Args:
+        gateway: Gateway name (e.g., 'equity')
+        db_session: Database session
+
+    Returns:
+        List of charge keywords for the gateway
+    """
     gateway_lower = gateway.lower()
+
+    # Try centralized table first
+    centralized_keywords = get_keywords_from_centralized_table("charge", gateway_lower, db_session)
+    if centralized_keywords:
+        return centralized_keywords
+
+    # Fallback to legacy per-gateway configuration
+    gateways = get_all_gateways(db_session)
     if gateway_lower in gateways:
-        return gateways[gateway_lower].get("charge_keywords", [])
+        legacy_keywords = gateways[gateway_lower].get("charge_keywords", [])
+        if legacy_keywords:
+            logger.debug(f"Using legacy charge keywords for {gateway}: {legacy_keywords}")
+            return legacy_keywords
+
+    logger.warning(f"No charge keywords found for gateway {gateway}")
     return []
 
 

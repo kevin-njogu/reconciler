@@ -12,6 +12,12 @@ import type {
   GatewayChangeRequestListResponse,
   ChangeRequestStatus,
   GatewayOptions,
+  // Unified gateway types
+  UnifiedGateway,
+  UnifiedGatewayListResponse,
+  UnifiedGatewayChangeRequest,
+  UnifiedGatewayChangeRequestCreate,
+  UnifiedGatewayChangeRequestListResponse,
 } from '@/types';
 
 export interface GatewayListParams {
@@ -141,5 +147,53 @@ export const gatewaysApi = {
       review
     );
     return response.data;
+  },
+
+  // ==========================================================================
+  // Unified Gateway endpoints (new)
+  // ==========================================================================
+  unified: {
+    // List all unified gateways
+    list: async (includeInactive = false): Promise<UnifiedGatewayListResponse> => {
+      const response = await apiClient.get<UnifiedGatewayListResponse>('/gateway-config/unified/list', {
+        params: { include_inactive: includeInactive },
+      });
+      return response.data;
+    },
+
+    // Get a single unified gateway by ID
+    get: async (gatewayId: number): Promise<UnifiedGateway> => {
+      const response = await apiClient.get<UnifiedGateway>(`/gateway-config/unified/${gatewayId}`);
+      return response.data;
+    },
+
+    // Create a change request for a unified gateway
+    createChangeRequest: async (data: UnifiedGatewayChangeRequestCreate): Promise<UnifiedGatewayChangeRequest> => {
+      const response = await apiClient.post<UnifiedGatewayChangeRequest>(
+        '/gateway-config/unified/change-request',
+        data
+      );
+      return response.data;
+    },
+
+    // Get pending change requests for unified gateways (admin only)
+    getPendingChangeRequests: async (): Promise<UnifiedGatewayChangeRequestListResponse> => {
+      const response = await apiClient.get<UnifiedGatewayChangeRequestListResponse>(
+        '/gateway-config/unified/change-requests/pending'
+      );
+      return response.data;
+    },
+
+    // Review a unified gateway change request (admin only)
+    reviewChangeRequest: async (
+      requestId: number,
+      review: GatewayChangeRequestReview
+    ): Promise<UnifiedGatewayChangeRequest> => {
+      const response = await apiClient.post<UnifiedGatewayChangeRequest>(
+        `/gateway-config/unified/change-requests/${requestId}/review`,
+        review
+      );
+      return response.data;
+    },
   },
 };

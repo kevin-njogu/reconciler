@@ -1,6 +1,10 @@
 # Use official Python image
 FROM python:3.11-slim
 
+# Set timezone to East Africa (Nairobi)
+ENV TZ=Africa/Nairobi
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 # Set working directory
 WORKDIR /app
 

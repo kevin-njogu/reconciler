@@ -13,7 +13,6 @@ from starlette.responses import Response
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
 
 logger = logging.getLogger("app.middleware.security")
 
@@ -46,6 +45,11 @@ limiter = Limiter(
 # Rate limit configurations for specific endpoints
 RATE_LIMITS = {
     "login": "5/minute",           # Strict limit on login attempts
+    "verify_otp": "10/minute",     # OTP verification attempts
+    "resend_otp": "3/minute",      # OTP resend requests
+    "forgot_password": "3/minute", # Forgot password requests
+    "verify_reset_otp": "5/minute",  # Reset OTP verification
+    "reset_password": "3/minute",  # Password reset attempts
     "refresh": "10/minute",        # Moderate limit on token refresh
     "upload": "30/minute",         # Reasonable limit for file uploads
     "reconcile": "10/minute",      # Limit reconciliation runs
@@ -97,27 +101,45 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     - Information disclosure (X-Powered-By removal)
     """
 
-    # Security headers to add to all responses
-    SECURITY_HEADERS = {
-        # Prevent XSS attacks
+    # Paths that serve API documentation (Swagger UI, ReDoc)
+    _DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}
+
+    # Base security headers (without CSP, which is environment-dependent)
+    _BASE_HEADERS = {
         "X-XSS-Protection": "1; mode=block",
-
-        # Prevent clickjacking
         "X-Frame-Options": "DENY",
-
-        # Prevent MIME type sniffing
         "X-Content-Type-Options": "nosniff",
-
-        # Referrer policy for privacy
         "Referrer-Policy": "strict-origin-when-cross-origin",
-
-        # Permissions policy (restrict browser features)
         "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
-
-        # Cache control for sensitive data
         "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
         "Pragma": "no-cache",
     }
+
+    # Strict CSP for production and non-docs paths
+    _STRICT_CSP = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+
+    # Relaxed CSP for API docs pages (Swagger UI / ReDoc load from CDN)
+    _DOCS_CSP = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: https://cdn.jsdelivr.net; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
 
     # HSTS header (only add in production with HTTPS)
     HSTS_HEADER = "max-age=31536000; includeSubDomains"
@@ -139,9 +161,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         """
         response = await call_next(request)
 
-        # Add standard security headers
-        for header, value in self.SECURITY_HEADERS.items():
+        # Add base security headers
+        for header, value in self._BASE_HEADERS.items():
             response.headers[header] = value
+
+        # Use relaxed CSP for docs paths (docs are disabled in production)
+        if request.url.path in self._DOCS_PATHS:
+            response.headers["Content-Security-Policy"] = self._DOCS_CSP
+        else:
+            response.headers["Content-Security-Policy"] = self._STRICT_CSP
 
         # Add HSTS only for HTTPS requests (check via X-Forwarded-Proto or scheme)
         is_https = (
@@ -151,9 +179,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if is_https:
             response.headers["Strict-Transport-Security"] = self.HSTS_HEADER
 
-        # Remove server identification headers
-        response.headers.pop("Server", None)
-        response.headers.pop("X-Powered-By", None)
+        # Remove server identification headers (if present)
+        if "Server" in response.headers:
+            del response.headers["Server"]
+        if "X-Powered-By" in response.headers:
+            del response.headers["X-Powered-By"]
 
         return response
 

@@ -10,8 +10,15 @@ Report Columns (as per requirements):
 - Debit: Debit amount
 - Credit: Credit amount
 - Reconciliation Status: reconciled/unreconciled
+- Reconciliation Note: Manual or system reconciliation note
 - Reconciliation Key: Composite key used for matching
 - Batch ID: Batch identifier
+
+Excel Format Sheets:
+- {Gateway} External Debits: External debit transactions
+- Workpay {Gateway} Debits: Internal/workpay debit transactions
+- {Gateway} Credits Deposits: External credit/deposit transactions
+- {Gateway} Charges: Bank charges
 """
 import csv
 from io import BytesIO, StringIO
@@ -109,7 +116,7 @@ def transactions_to_report_dataframe(transactions: List[Transaction]) -> pd.Data
     Convert transaction records to report DataFrame with required columns.
 
     Columns: Date, Transaction Reference, Details, Debit, Credit,
-             Reconciliation Status, Reconciliation Key, Batch ID
+             Reconciliation Status, Reconciliation Note, Reconciliation Key, Batch ID
 
     Args:
         transactions: List of Transaction records.
@@ -120,11 +127,19 @@ def transactions_to_report_dataframe(transactions: List[Transaction]) -> pd.Data
     if not transactions:
         return pd.DataFrame(columns=[
             "Date", "Transaction Reference", "Details", "Debit", "Credit",
-            "Reconciliation Status", "Reconciliation Key", "Batch ID"
+            "Reconciliation Status", "Reconciliation Note", "Reconciliation Key", "Batch ID"
         ])
 
     records = []
     for t in transactions:
+        # Determine the reconciliation note to display
+        # Priority: manual_recon_note > reconciliation_note (for system reconciled)
+        recon_note = ""
+        if t.manual_recon_note:
+            recon_note = t.manual_recon_note
+        elif t.reconciliation_note:
+            recon_note = t.reconciliation_note
+
         records.append({
             "Date": t.date.strftime("%Y-%m-%d") if t.date else "",
             "Transaction Reference": t.transaction_id or "",
@@ -132,6 +147,7 @@ def transactions_to_report_dataframe(transactions: List[Transaction]) -> pd.Data
             "Debit": float(t.debit) if t.debit else 0.0,
             "Credit": float(t.credit) if t.credit else 0.0,
             "Reconciliation Status": t.reconciliation_status or "",
+            "Reconciliation Note": recon_note,
             "Reconciliation Key": t.reconciliation_key or "",
             "Batch ID": t.batch_id or "",
         })
@@ -231,7 +247,7 @@ def generate_gateway_report(
     credits = load_transactions(
         db_session, batch_id,
         gateway=gateway_lower,
-        transaction_type=TransactionType.CREDIT.value
+        transaction_type=TransactionType.DEPOSIT.value
     )
     debits = load_transactions(
         db_session, batch_id,
@@ -294,7 +310,7 @@ def generate_reconciliation_summary(
 
     # Filter external by type
     external_debits = [t for t in all_external if t.transaction_type == TransactionType.DEBIT.value]
-    external_credits = [t for t in all_external if t.transaction_type == TransactionType.CREDIT.value]
+    external_credits = [t for t in all_external if t.transaction_type == TransactionType.DEPOSIT.value]
     external_charges = [t for t in all_external if t.transaction_type == TransactionType.CHARGE.value]
 
     # External debit counts
@@ -529,16 +545,24 @@ def download_batch_gateway_report(
     """
     Generate and download reconciliation report for a specific batch and gateway.
 
-    This is the primary report download function that generates a simple,
-    flat report with the following columns:
+    This is the primary report download function that generates a report with:
     - Date
     - Transaction Reference
     - Details
     - Debit
     - Credit
     - Reconciliation Status
+    - Reconciliation Note
     - Reconciliation Key
     - Batch ID
+
+    For Excel format, the report is split into multiple sheets:
+    - {Gateway} External Debits: External debit transactions
+    - Workpay {Gateway} Debits: Internal/workpay debit transactions
+    - {Gateway} Credits Deposits: External credit/deposit transactions
+    - {Gateway} Charges: Bank charges
+
+    For CSV format, all transactions are in a single file.
 
     Args:
         db_session: Database session.
@@ -553,6 +577,7 @@ def download_batch_gateway_report(
         ValueError: If no transactions found or invalid format.
     """
     gateway_lower = gateway.lower()
+    gateway_display = gateway.capitalize()
 
     # Load all transactions for this batch and gateway
     transactions = load_transactions_for_gateway(db_session, batch_id, gateway_lower)
@@ -562,14 +587,13 @@ def download_batch_gateway_report(
             f"No transactions found for batch '{batch_id}' and gateway '{gateway}'"
         )
 
-    # Convert to report DataFrame
-    df = transactions_to_report_dataframe(transactions)
-
     # Generate filename
     base_filename = f"reconciliation_{gateway_lower}_{batch_id}"
 
     if format == "csv":
-        # Generate CSV
+        # For CSV, generate a single flat file with all transactions
+        df = transactions_to_report_dataframe(transactions)
+
         output = StringIO()
         df.to_csv(output, index=False, quoting=csv.QUOTE_NONNUMERIC)
         output.seek(0)
@@ -585,9 +609,57 @@ def download_batch_gateway_report(
             }
         )
     else:
-        # Generate XLSX (default)
+        # For Excel, generate multi-sheet report
+        # Separate transactions by type and source (external vs internal)
+        external_debits = []
+        internal_debits = []
+        credits_deposits = []
+        charges = []
+
+        for txn in transactions:
+            gateway_name = txn.gateway or ""
+            txn_type = txn.transaction_type or ""
+
+            # Determine if external or internal
+            is_internal = (
+                gateway_name.endswith("_internal") or
+                gateway_name.startswith("workpay_")
+            )
+
+            if txn_type == TransactionType.CHARGE.value:
+                charges.append(txn)
+            elif txn_type == TransactionType.DEPOSIT.value:
+                credits_deposits.append(txn)
+            elif txn_type == TransactionType.DEBIT.value:
+                if is_internal:
+                    internal_debits.append(txn)
+                else:
+                    external_debits.append(txn)
+            elif txn_type == TransactionType.PAYOUT.value:
+                # Internal payouts go to internal debits sheet
+                internal_debits.append(txn)
+
+        # Build DataFrames for each sheet
+        dataframes = {}
+
+        if external_debits:
+            dataframes[f"{gateway_display} External Debits"] = transactions_to_report_dataframe(external_debits)
+
+        if internal_debits:
+            dataframes[f"Workpay {gateway_display} Debits"] = transactions_to_report_dataframe(internal_debits)
+
+        if credits_deposits:
+            dataframes[f"{gateway_display} Credits Deposits"] = transactions_to_report_dataframe(credits_deposits)
+
+        if charges:
+            dataframes[f"{gateway_display} Charges"] = transactions_to_report_dataframe(charges)
+
+        # If no categorized data (edge case), fall back to single sheet
+        if not dataframes:
+            dataframes = {"Transactions": transactions_to_report_dataframe(transactions)}
+
+        # Write to Excel
         output = BytesIO()
-        dataframes = {"Transactions": df}
         write_to_excel(output, dataframes)
         output.seek(0)
 

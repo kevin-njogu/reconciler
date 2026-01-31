@@ -8,10 +8,11 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
-  File,
   CheckCircle,
   XCircle,
   AlertTriangle,
+  Clock,
+  CheckCircle2,
 } from 'lucide-react';
 import { batchesApi, getErrorMessage } from '@/api';
 import {
@@ -38,18 +39,12 @@ import {
 import { useToast } from '@/hooks/useToast';
 import { useUser, useIsAdminOnly, useIsUserRole } from '@/stores';
 import { formatDateTime, cn } from '@/lib/utils';
-import type { Batch, BatchStatus, BatchDeleteRequest } from '@/types';
-
-const statusOptions = [
-  { value: '', label: 'All Statuses' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'completed', label: 'Completed' },
-];
+import type { Batch, BatchDeleteRequest } from '@/types';
 
 const pageSizeOptions = [
+  { value: '5', label: '5 per page' },
   { value: '10', label: '10 per page' },
   { value: '25', label: '25 per page' },
-  { value: '50', label: '50 per page' },
 ];
 
 export function BatchesPage() {
@@ -58,9 +53,12 @@ export function BatchesPage() {
   const currentUser = useUser();
   const isAdminOnly = useIsAdminOnly();
   const isUserRole = useIsUserRole();
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+
+  // Separate pagination states for each table
+  const [pendingPage, setPendingPage] = useState(1);
+  const [pendingPageSize, setPendingPageSize] = useState(10);
+  const [closedPage, setClosedPage] = useState(1);
+  const [closedPageSize, setClosedPageSize] = useState(10);
 
   // Modal states
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -73,13 +71,25 @@ export function BatchesPage() {
   const [deleteReason, setDeleteReason] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['batches', statusFilter, page, pageSize],
+  // Fetch pending batches
+  const { data: pendingData, isLoading: pendingLoading, error: pendingError } = useQuery({
+    queryKey: ['batches', 'pending', pendingPage, pendingPageSize],
     queryFn: () =>
       batchesApi.list({
-        status: statusFilter ? (statusFilter as BatchStatus) : undefined,
-        page,
-        page_size: pageSize,
+        status: 'pending',
+        page: pendingPage,
+        page_size: pendingPageSize,
+      }),
+  });
+
+  // Fetch closed batches
+  const { data: closedData, isLoading: closedLoading, error: closedError } = useQuery({
+    queryKey: ['batches', 'completed', closedPage, closedPageSize],
+    queryFn: () =>
+      batchesApi.list({
+        status: 'completed',
+        page: closedPage,
+        page_size: closedPageSize,
       }),
   });
 
@@ -87,7 +97,7 @@ export function BatchesPage() {
   const { data: deleteRequestsData } = useQuery({
     queryKey: ['batchDeleteRequests', 'pending'],
     queryFn: () => batchesApi.getDeleteRequests('pending'),
-    enabled: isAdminOnly, // Only fetch for admins
+    enabled: isAdminOnly,
   });
 
   // Create a map of batch_id -> pending delete request for quick lookup
@@ -104,7 +114,11 @@ export function BatchesPage() {
   const createBatchMutation = useMutation({
     mutationFn: () => batchesApi.create(),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batches'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['reportBatches'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['transactionBatches'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['dashboardBatches'], refetchType: 'all' });
       toast.success(`Batch ${data.batch_id} created successfully`);
       setCreateModalOpen(false);
     },
@@ -117,7 +131,11 @@ export function BatchesPage() {
   const closeBatchMutation = useMutation({
     mutationFn: (batchId: string) => batchesApi.close(batchId),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batches'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['reportBatches'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['transactionBatches'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['dashboardBatches'], refetchType: 'all' });
       toast.success(`Batch ${data.batch_id} closed successfully`);
       setCloseModalOpen(false);
       setSelectedBatch(null);
@@ -132,7 +150,11 @@ export function BatchesPage() {
     mutationFn: ({ batchId, reason }: { batchId: string; reason?: string }) =>
       batchesApi.requestDelete(batchId, reason),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['batches'] });
+      queryClient.invalidateQueries({ queryKey: ['batches'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['batchDeleteRequests'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['reportBatches'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['transactionBatches'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['dashboardBatches'], refetchType: 'all' });
       toast.success('Delete request submitted. Awaiting admin approval.');
       setDeleteModalOpen(false);
       setSelectedBatch(null);
@@ -147,15 +169,22 @@ export function BatchesPage() {
   const approveDeleteMutation = useMutation({
     mutationFn: (requestId: number) =>
       batchesApi.reviewDeleteRequest(requestId, { approved: true }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['batches'] });
-      queryClient.invalidateQueries({ queryKey: ['batchDeleteRequests'] });
-      toast.success('Delete request approved. Batch has been deleted.');
+    onSuccess: async () => {
       setApproveModalOpen(false);
       setSelectedDeleteRequest(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['batches'], refetchType: 'all' }),
+        queryClient.invalidateQueries({ queryKey: ['batchDeleteRequests'], refetchType: 'all' }),
+        queryClient.invalidateQueries({ queryKey: ['transactionBatches'], refetchType: 'all' }),
+        queryClient.invalidateQueries({ queryKey: ['transactions'], refetchType: 'all' }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' }),
+        queryClient.invalidateQueries({ queryKey: ['dashboardBatches'], refetchType: 'all' }),
+      ]);
+      toast.success('Delete request approved. Batch has been deleted.');
     },
     onError: (err) => {
       toast.error(getErrorMessage(err));
+      setApproveModalOpen(false);
     },
   });
 
@@ -163,16 +192,21 @@ export function BatchesPage() {
   const rejectDeleteMutation = useMutation({
     mutationFn: ({ requestId, reason }: { requestId: number; reason: string }) =>
       batchesApi.reviewDeleteRequest(requestId, { approved: false, rejection_reason: reason }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['batches'] });
-      queryClient.invalidateQueries({ queryKey: ['batchDeleteRequests'] });
-      toast.success('Delete request rejected.');
+    onSuccess: async () => {
       setRejectModalOpen(false);
       setSelectedDeleteRequest(null);
       setRejectionReason('');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['batches'], refetchType: 'all' }),
+        queryClient.invalidateQueries({ queryKey: ['batchDeleteRequests'], refetchType: 'all' }),
+        queryClient.invalidateQueries({ queryKey: ['transactionBatches'], refetchType: 'all' }),
+        queryClient.invalidateQueries({ queryKey: ['dashboardBatches'], refetchType: 'all' }),
+      ]);
+      toast.success('Delete request rejected.');
     },
     onError: (err) => {
       toast.error(getErrorMessage(err));
+      setRejectModalOpen(false);
     },
   });
 
@@ -236,32 +270,81 @@ export function BatchesPage() {
     }
   };
 
-  const handlePageChange = (newPage: number) => {
-    setPage(newPage);
-  };
+  if (pendingLoading && closedLoading) return <PageLoading />;
 
-  const handlePageSizeChange = (newSize: string) => {
-    setPageSize(parseInt(newSize, 10));
-    setPage(1);
-  };
-
-  const handleStatusFilterChange = (newStatus: string) => {
-    setStatusFilter(newStatus);
-    setPage(1);
-  };
-
-  if (isLoading) return <PageLoading />;
-
-  if (error) {
+  if (pendingError && closedError) {
     return (
       <Alert variant="error" title="Error loading batches">
-        {getErrorMessage(error)}
+        {getErrorMessage(pendingError)}
       </Alert>
     );
   }
 
-  const batches = data?.batches || [];
-  const pagination = data?.pagination;
+  const pendingBatches = pendingData?.batches || [];
+  const pendingPagination = pendingData?.pagination;
+  const closedBatches = closedData?.batches || [];
+  const closedPagination = closedData?.pagination;
+
+  // Pagination component for reuse
+  const PaginationControls = ({
+    pagination,
+    page,
+    onPageChange,
+    pageSize,
+    onPageSizeChange,
+    label,
+  }: {
+    pagination: typeof pendingPagination;
+    page: number;
+    onPageChange: (p: number) => void;
+    pageSize: number;
+    onPageSizeChange: (size: string) => void;
+    label: string;
+  }) => {
+    if (!pagination || pagination.total_pages === 0) return null;
+
+    return (
+      <div className="flex flex-col gap-3 px-4 py-3 border-t">
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-gray-500">
+            {pagination.total_count} {label}
+          </div>
+          <div className="w-28">
+            <Select
+              options={pageSizeOptions}
+              value={pageSize.toString()}
+              onChange={(e) => onPageSizeChange(e.target.value)}
+            />
+          </div>
+        </div>
+        {pagination.total_pages > 1 && (
+          <div className="flex items-center justify-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(page - 1)}
+              disabled={!pagination.has_previous}
+              className="px-2"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-xs text-gray-600 px-2">
+              {page} / {pagination.total_pages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(page + 1)}
+              disabled={!pagination.has_next}
+              className="px-2"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -283,242 +366,227 @@ export function BatchesPage() {
         )}
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>All Batches</CardTitle>
-          <div className="flex gap-3">
-            <div className="w-32">
-              <Select
-                options={pageSizeOptions}
-                value={pageSize.toString()}
-                onChange={(e) => handlePageSizeChange(e.target.value)}
-              />
-            </div>
-            <div className="w-48">
-              <Select
-                options={statusOptions}
-                value={statusFilter}
-                onChange={(e) => handleStatusFilterChange(e.target.value)}
-                placeholder="Filter by status"
-              />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Batch ID</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created By</TableHead>
-                <TableHead>Files</TableHead>
-                <TableHead>Created At</TableHead>
-                <TableHead>Closed At</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {batches.length === 0 ? (
-                <TableEmpty message="No batches found. Create one to get started." colSpan={7} />
-              ) : (
-                batches.map((batch) => {
-                  const isCreator = currentUser?.id === batch.created_by_id;
-                  const isPending = batch.status === 'pending';
-                  const pendingDeleteRequest = pendingDeleteRequestsMap.get(batch.batch_id);
-                  const hasPendingDelete = !!pendingDeleteRequest;
+      {/* Two-column layout for tables */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Pending Batches Table - Left Side */}
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 pb-3">
+            <Clock className="h-5 w-5 text-amber-500" />
+            <CardTitle className="text-lg">Pending Batches</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Batch ID</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created By</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pendingLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8 text-gray-500">
+                      Loading...
+                    </TableCell>
+                  </TableRow>
+                ) : pendingBatches.length === 0 ? (
+                  <TableEmpty message="No pending batches" colSpan={4} />
+                ) : (
+                  pendingBatches.map((batch) => {
+                    const isCreator = currentUser?.id === batch.created_by_id;
+                    const pendingDeleteRequest = pendingDeleteRequestsMap.get(batch.batch_id);
+                    const hasPendingDelete = !!pendingDeleteRequest;
 
-                  return (
-                    <TableRow
-                      key={batch.id}
-                      className={cn(hasPendingDelete && 'bg-red-50')}
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className={cn(
-                            'p-2 rounded-lg',
-                            hasPendingDelete ? 'bg-red-100' : 'bg-gray-100'
-                          )}>
-                            {hasPendingDelete ? (
-                              <AlertTriangle className="h-5 w-5 text-red-600" />
-                            ) : (
-                              <FolderOpen className="h-5 w-5 text-gray-600" />
-                            )}
-                          </div>
-                          <div>
-                            <span className={cn(
-                              'font-mono font-medium',
-                              hasPendingDelete && 'text-red-700'
+                    return (
+                      <TableRow
+                        key={batch.id}
+                        className={cn(hasPendingDelete && 'bg-red-50')}
+                      >
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className={cn(
+                              'p-1.5 rounded-lg',
+                              hasPendingDelete ? 'bg-red-100' : 'bg-amber-100'
                             )}>
-                              {batch.batch_id}
-                            </span>
-                            {hasPendingDelete && (
-                              <p className="text-xs text-red-600 mt-0.5 font-medium">
-                                Pending deletion by {pendingDeleteRequest.requested_by}
-                              </p>
+                              {hasPendingDelete ? (
+                                <AlertTriangle className="h-4 w-4 text-red-600" />
+                              ) : (
+                                <FolderOpen className="h-4 w-4 text-amber-600" />
+                              )}
+                            </div>
+                            <div>
+                              <span className={cn(
+                                'font-mono text-sm',
+                                hasPendingDelete && 'text-red-700'
+                              )}>
+                                {batch.batch_id}
+                              </span>
+                              {hasPendingDelete && (
+                                <p className="text-xs text-red-600 font-medium">
+                                  Pending deletion
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {hasPendingDelete ? (
+                            <Badge variant="danger">Delete Pending</Badge>
+                          ) : (
+                            <Badge variant={getStatusBadgeVariant(batch.status)}>{batch.status}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className={cn(
+                            'flex items-center gap-1.5 text-sm',
+                            hasPendingDelete ? 'text-red-600' : 'text-gray-600'
+                          )}>
+                            <User className="h-3.5 w-3.5" />
+                            {batch.created_by || '-'}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center justify-end gap-1">
+                            {/* Admin view: Show approve/reject for pending delete requests */}
+                            {isAdminOnly && hasPendingDelete && pendingDeleteRequest && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleApproveClick(pendingDeleteRequest)}
+                                  className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                >
+                                  <CheckCircle className="h-4 w-4 mr-1" />
+                                  Approve
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRejectClick(pendingDeleteRequest)}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  <XCircle className="h-4 w-4 mr-1" />
+                                  Reject
+                                </Button>
+                              </>
                             )}
-                            {batch.description && !hasPendingDelete && (
-                              <p className="text-xs text-gray-500 mt-0.5 max-w-50 truncate">
-                                {batch.description}
-                              </p>
+
+                            {/* User view: Show close and request delete buttons */}
+                            {isUserRole && (
+                              <>
+                                {isCreator && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleCloseClick(batch)}
+                                    className="text-green-600 hover:text-green-700 hover:bg-green-50 px-2"
+                                    title="Close batch"
+                                  >
+                                    <Lock className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                {!hasPendingDelete && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDeleteClick(batch)}
+                                    className="text-danger-600 hover:text-danger-700 hover:bg-danger-50 px-2"
+                                    title="Request delete"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </>
                             )}
                           </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+            <PaginationControls
+              pagination={pendingPagination}
+              page={pendingPage}
+              onPageChange={(p) => setPendingPage(p)}
+              pageSize={pendingPageSize}
+              onPageSizeChange={(size) => {
+                setPendingPageSize(parseInt(size, 10));
+                setPendingPage(1);
+              }}
+              label="pending"
+            />
+          </CardContent>
+        </Card>
+
+        {/* Closed Batches Table - Right Side */}
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 pb-3">
+            <CheckCircle2 className="h-5 w-5 text-green-500" />
+            <CardTitle className="text-lg">Closed Batches</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Batch ID</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created By</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {closedLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center py-8 text-gray-500">
+                      Loading...
+                    </TableCell>
+                  </TableRow>
+                ) : closedBatches.length === 0 ? (
+                  <TableEmpty message="No closed batches" colSpan={3} />
+                ) : (
+                  closedBatches.map((batch) => (
+                    <TableRow key={batch.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-green-100">
+                            <FolderOpen className="h-4 w-4 text-green-600" />
+                          </div>
+                          <span className="font-mono text-sm">
+                            {batch.batch_id}
+                          </span>
                         </div>
                       </TableCell>
                       <TableCell>
-                        {hasPendingDelete ? (
-                          <Badge variant="error">Delete Pending</Badge>
-                        ) : (
-                          <Badge variant={getStatusBadgeVariant(batch.status)}>{batch.status}</Badge>
-                        )}
+                        <Badge variant={getStatusBadgeVariant(batch.status)}>{batch.status}</Badge>
                       </TableCell>
                       <TableCell>
-                        <div className={cn(
-                          'flex items-center gap-2',
-                          hasPendingDelete ? 'text-red-600' : 'text-gray-500'
-                        )}>
-                          <User className="h-4 w-4" />
+                        <div className="flex items-center gap-1.5 text-sm text-gray-600">
+                          <User className="h-3.5 w-3.5" />
                           {batch.created_by || '-'}
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className={cn(
-                          'flex items-center gap-2',
-                          hasPendingDelete ? 'text-red-600' : 'text-gray-500'
-                        )}>
-                          <File className="h-4 w-4" />
-                          {batch.file_count ?? 0}
-                        </div>
-                      </TableCell>
-                      <TableCell className={hasPendingDelete ? 'text-red-600' : 'text-gray-500'}>
-                        {formatDateTime(batch.created_at)}
-                      </TableCell>
-                      <TableCell className={hasPendingDelete ? 'text-red-600' : 'text-gray-500'}>
-                        {batch.closed_at ? formatDateTime(batch.closed_at) : '-'}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end gap-2">
-                          {/* Admin view: Show approve/reject for pending delete requests */}
-                          {isAdminOnly && hasPendingDelete && pendingDeleteRequest && (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleApproveClick(pendingDeleteRequest)}
-                                className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                              >
-                                <CheckCircle className="h-4 w-4 mr-1" />
-                                Approve Delete
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRejectClick(pendingDeleteRequest)}
-                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                              >
-                                <XCircle className="h-4 w-4 mr-1" />
-                                Reject Delete
-                              </Button>
-                            </>
-                          )}
-
-                          {/* User view: Show close and request delete buttons */}
-                          {isUserRole && (
-                            <>
-                              {isPending && isCreator && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleCloseClick(batch)}
-                                  className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                                >
-                                  <Lock className="h-4 w-4 mr-1" />
-                                  Close
-                                </Button>
-                              )}
-                              {!hasPendingDelete && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDeleteClick(batch)}
-                                  className="text-danger-600 hover:text-danger-700 hover:bg-danger-50"
-                                >
-                                  <Trash2 className="h-4 w-4 mr-1" />
-                                  Request Delete
-                                </Button>
-                              )}
-                              {hasPendingDelete && (
-                                <span className="text-xs text-red-600 italic">
-                                  Awaiting approval
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
                     </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-
-          {/* Pagination Controls */}
-          {pagination && pagination.total_pages > 0 && (
-            <div className="flex items-center justify-between px-6 py-4 border-t">
-              <div className="text-sm text-gray-500">
-                Showing {(pagination.page - 1) * pagination.page_size + 1} to{' '}
-                {Math.min(pagination.page * pagination.page_size, pagination.total_count)} of{' '}
-                {pagination.total_count} batches
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(page - 1)}
-                  disabled={!pagination.has_previous}
-                >
-                  <ChevronLeft className="h-4 w-4 mr-1" />
-                  Previous
-                </Button>
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(5, pagination.total_pages) }, (_, i) => {
-                    let pageNum: number;
-                    if (pagination.total_pages <= 5) {
-                      pageNum = i + 1;
-                    } else if (page <= 3) {
-                      pageNum = i + 1;
-                    } else if (page >= pagination.total_pages - 2) {
-                      pageNum = pagination.total_pages - 4 + i;
-                    } else {
-                      pageNum = page - 2 + i;
-                    }
-                    return (
-                      <Button
-                        key={pageNum}
-                        variant={pageNum === page ? 'primary' : 'outline'}
-                        size="sm"
-                        onClick={() => handlePageChange(pageNum)}
-                        className="min-w-[40px]"
-                      >
-                        {pageNum}
-                      </Button>
-                    );
-                  })}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(page + 1)}
-                  disabled={!pagination.has_next}
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+            <PaginationControls
+              pagination={closedPagination}
+              page={closedPage}
+              onPageChange={(p) => setClosedPage(p)}
+              pageSize={closedPageSize}
+              onPageSizeChange={(size) => {
+                setClosedPageSize(parseInt(size, 10));
+                setClosedPage(1);
+              }}
+              label="closed"
+            />
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Create Batch Confirmation Modal */}
       <Modal
@@ -659,8 +727,8 @@ export function BatchesPage() {
             </div>
           )}
           <div className="text-sm text-neutral-500">
-            <p>Requested by: <span className="font-medium">{selectedDeleteRequest?.requested_by}</span></p>
-            <p>Requested at: <span className="font-medium">{selectedDeleteRequest?.created_at ? formatDateTime(selectedDeleteRequest.created_at) : '-'}</span></p>
+            <p>Requested by: {selectedDeleteRequest?.requested_by}</p>
+            <p>Requested at: {selectedDeleteRequest?.created_at ? formatDateTime(selectedDeleteRequest.created_at) : '-'}</p>
           </div>
         </div>
         <ModalFooter>
