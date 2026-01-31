@@ -1,0 +1,47 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*.egg-info
+venv/
+.venv/
+env/
+
+# Frontend (built separately)
+frontend/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment files (secrets injected at runtime)
+.env
+.env.*
+!.env.example
+
+# Documentation
+*.md
+docs/
+LICENSE
+
+# Docker
+docker-compose.yml
+.dockerignore
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Uploads and logs (runtime data)
+uploads/
+logs/
+
+# Misc
+.DS_Store
+*.tmp
+*.bak
+.cache/

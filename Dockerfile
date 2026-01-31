@@ -14,11 +14,29 @@ COPY requirements.txt .
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy your FastAPI code
-COPY . .
+# Copy application code
+COPY alembic.ini .
+COPY alembic/ alembic/
+COPY app/ app/
 
-# Expose the FastAPI port
-EXPOSE 8000
+# Create non-root user
+RUN adduser --disabled-password --gecos '' appuser && \
+    chown -R appuser:appuser /app
+USER appuser
 
-# Run FastAPI with uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Cloud Run sets PORT env var (default 8080)
+ENV PORT=8080
+
+EXPOSE ${PORT}
+
+# Use gunicorn with uvicorn workers for production
+# Cloud Run scales horizontally (multiple containers), so 2 workers per container is sufficient
+CMD exec gunicorn app.main:app \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --workers 2 \
+    --bind 0.0.0.0:${PORT} \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --keep-alive 5 \
+    --access-logfile - \
+    --error-logfile -

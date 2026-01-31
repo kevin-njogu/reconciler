@@ -42,8 +42,8 @@ class Settings(BaseSettings):
 
     # Storage
     STORAGE_BACKEND: Literal["local", "gcs"]
-    LOCAL_UPLOADS_PATH: str
-    GCS_BUCKET: str
+    LOCAL_UPLOADS_PATH: str = "uploads"
+    GCS_BUCKET: str = ""
 
     class Config:
         env_file = ".env"
