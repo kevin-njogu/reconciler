@@ -2,25 +2,6 @@ import { apiClient } from './client';
 
 export type ReportFormat = 'xlsx' | 'csv';
 
-export interface ReportBatch {
-  batch_id: string;
-  batch_db_id: number;
-  status: string;
-  description?: string;
-  created_at: string;
-  closed_at?: string;
-  created_by?: string;
-}
-
-export interface BatchesResponse {
-  batches: ReportBatch[];
-  count: number;
-}
-
-// Legacy alias for backwards compatibility
-export type ClosedBatch = ReportBatch;
-export type ClosedBatchesResponse = BatchesResponse;
-
 export interface AvailableGateway {
   gateway: string;
   display_name: string;
@@ -32,72 +13,59 @@ export interface AvailableGatewaysResponse {
   count: number;
 }
 
+export interface ReportRun {
+  run_id: string;
+  gateway: string;
+  matched: number;
+  unmatched_external: number;
+  unmatched_internal: number;
+  created_at: string | null;
+}
+
+export interface RunsResponse {
+  runs: ReportRun[];
+  count: number;
+}
+
 export const reportsApi = {
   /**
-   * Get batches for report generation.
-   * Returns latest 5 by default, supports search by batch ID and status filter.
+   * Get gateways that have transactions in the database.
    */
-  getBatches: async (
-    search?: string,
-    limit: number = 5,
-    status?: 'pending' | 'completed' | 'all'
-  ): Promise<BatchesResponse> => {
-    const response = await apiClient.get<BatchesResponse>('/reports/batches', {
-      params: { search, limit, status },
-    });
+  getAvailableGateways: async (): Promise<AvailableGatewaysResponse> => {
+    const response = await apiClient.get<AvailableGatewaysResponse>('/reports/available-gateways');
     return response.data;
   },
 
   /**
-   * Get closed batches for report generation (legacy endpoint).
-   * Returns latest 5 by default, supports search by batch ID.
+   * Get reconciliation runs for report drill-down.
    */
-  getClosedBatches: async (search?: string, limit: number = 5): Promise<BatchesResponse> => {
-    const response = await apiClient.get<BatchesResponse>('/reports/closed-batches', {
-      params: { search, limit },
-    });
+  getRuns: async (gateway?: string, limit: number = 20): Promise<RunsResponse> => {
+    const params: Record<string, string | number> = {};
+    if (gateway) params.gateway = gateway;
+    if (limit) params.limit = limit;
+
+    const response = await apiClient.get<RunsResponse>('/reports/runs', { params });
     return response.data;
   },
 
   /**
-   * Get available gateways for a specific batch.
-   * Only returns gateways that have transactions in the batch.
-   */
-  getAvailableGateways: async (batchId: string): Promise<AvailableGatewaysResponse> => {
-    const response = await apiClient.get<AvailableGatewaysResponse>('/reports/available-gateways', {
-      params: { batch_id: batchId },
-    });
-    return response.data;
-  },
-
-  /**
-   * Download reconciliation report for a batch and gateway.
-   * Both batch_id and gateway are required. Supports XLSX and CSV formats.
+   * Download reconciliation report.
+   * Gateway is required. Optional: date range and run_id for filtering.
    */
   downloadReport: async (
-    batchId: string,
     gateway: string,
-    format: ReportFormat = 'xlsx'
+    format: ReportFormat = 'xlsx',
+    dateFrom?: string,
+    dateTo?: string,
+    runId?: string
   ): Promise<Blob> => {
-    const response = await apiClient.get('/reports/download/batch', {
-      params: { batch_id: batchId, gateway, format },
-      responseType: 'blob',
-    });
-    return response.data;
-  },
+    const params: Record<string, string> = { gateway, format };
+    if (dateFrom) params.date_from = dateFrom;
+    if (dateTo) params.date_to = dateTo;
+    if (runId) params.run_id = runId;
 
-  // Legacy endpoints (kept for backwards compatibility)
-  downloadGatewayReport: async (gateway: string, batchId: string): Promise<Blob> => {
-    const response = await apiClient.get(`/reports/download/${gateway}`, {
-      params: { batch_id: batchId },
-      responseType: 'blob',
-    });
-    return response.data;
-  },
-
-  downloadFullReport: async (batchId: string): Promise<Blob> => {
     const response = await apiClient.get('/reports/download', {
-      params: { batch_id: batchId },
+      params,
       responseType: 'blob',
     });
     return response.data;

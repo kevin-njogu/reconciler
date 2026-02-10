@@ -414,7 +414,7 @@ export function UsersPage() {
           </div>
 
           <Alert variant="info">
-            A welcome email has been sent to the user with their login credentials and OTP.
+            A welcome email has been sent to the user with their login credentials.
           </Alert>
         </div>
         <ModalFooter>

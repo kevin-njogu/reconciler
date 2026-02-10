@@ -1,10 +1,9 @@
 import { apiClient } from './client';
-import type { BatchFilesResponse } from '@/types';
+import type { UploadedFile } from '@/types';
 
 // Response for single file upload (legacy/template mode)
 export interface FileUploadResponse {
   message: string;
-  batch_id: string;
   gateway: string;
   upload_gateway: string;
   filename: string;
@@ -35,23 +34,18 @@ export interface FileValidationResponse {
   message: string;
 }
 
-// Response for pending batches
-export interface PendingBatch {
-  batch_id: string;
-  description?: string;
-  created_at?: string;
-}
-
-export interface PendingBatchesResponse {
-  batches: PendingBatch[];
-}
-
 // Response for file deletion
 export interface FileDeleteResponse {
   message: string;
-  batch_id: string;
   gateway: string;
   filename: string;
+}
+
+// Response for file listing
+export interface FileListResponse {
+  gateway?: string;
+  file_count: number;
+  files: UploadedFile[];
 }
 
 // Template column info response
@@ -72,22 +66,13 @@ export interface TemplateInfoResponse {
 
 export const uploadApi = {
   /**
-   * Get current user's pending batches for the upload batch dropdown.
-   */
-  getPendingBatches: async (): Promise<PendingBatchesResponse> => {
-    const response = await apiClient.get<PendingBatchesResponse>('/upload/pending-batches');
-    return response.data;
-  },
-
-  /**
-   * Upload a single file to a batch's gateway subdirectory.
+   * Upload a single file for a gateway.
    * File is renamed to {gateway_name}.{ext} and stored in:
-   * {batch_id}/{external_gateway}/{gateway_name}.{ext}
+   * {external_gateway}/{gateway_name}.{ext}
    *
    * @param transform - If true, transforms raw file using gateway column mapping
    */
   uploadFile: async (
-    batchId: string,
     gatewayName: string,
     file: File,
     transform: boolean = false
@@ -99,7 +84,7 @@ export const uploadApi = {
       '/upload/file',
       formData,
       {
-        params: { batch_id: batchId, gateway_name: gatewayName, transform },
+        params: { gateway_name: gatewayName, transform },
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -109,41 +94,40 @@ export const uploadApi = {
   },
 
   /**
-   * Delete an uploaded file from a batch.
+   * Delete an uploaded file.
    */
   deleteFile: async (
-    batchId: string,
     filename: string,
     gateway: string
   ): Promise<FileDeleteResponse> => {
     const response = await apiClient.delete<FileDeleteResponse>('/upload/file', {
-      params: { batch_id: batchId, filename, gateway },
+      params: { filename, gateway },
     });
     return response.data;
   },
 
   /**
-   * Download an uploaded file from a batch.
+   * Download an uploaded file.
    */
   downloadFile: async (
-    batchId: string,
     filename: string,
     gateway: string
   ): Promise<Blob> => {
     const response = await apiClient.get('/upload/file/download', {
-      params: { batch_id: batchId, filename, gateway },
+      params: { filename, gateway },
       responseType: 'blob',
     });
     return response.data;
   },
 
   /**
-   * List all uploaded files for a batch.
+   * List uploaded files, optionally filtered by gateway.
    */
-  listFiles: async (batchId: string): Promise<BatchFilesResponse> => {
-    const response = await apiClient.get<BatchFilesResponse>('/upload/files', {
-      params: { batch_id: batchId },
-    });
+  listFiles: async (gateway?: string): Promise<FileListResponse> => {
+    const params: Record<string, string> = {};
+    if (gateway) params.gateway = gateway;
+
+    const response = await apiClient.get<FileListResponse>('/upload/files', { params });
     return response.data;
   },
 

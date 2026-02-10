@@ -40,17 +40,11 @@ class DataLoader:
     Unified data loader that reads files using a pluggable storage backend.
     Supports Excel (.xlsx, .xls) and CSV files.
 
-    Files are organized in gateway subdirectories:
-        {batch_id}/{external_gateway}/{gateway_name}.{ext}
+    Files are organized in gateway directories:
+        {gateway}/{gateway_name}.{ext}
     """
 
     def __init__(self, storage: Optional[StorageBackend] = None):
-        """
-        Initialize DataLoader with a storage backend.
-
-        Args:
-            storage: Storage backend to use. Defaults to environment-configured storage.
-        """
         self.storage = storage or get_storage()
 
     def _read_excel_from_bytes(self, content: bytes, engine: str = XLSX_ENGINE) -> pd.DataFrame:
@@ -74,15 +68,15 @@ class DataLoader:
         except Exception as e:
             raise ReadFileException(f"Error reading CSV content: {str(e)}")
 
-    def _read_xlsx_file(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> pd.DataFrame:
+    def _read_xlsx_file(self, gateway: str, filename: str) -> pd.DataFrame:
         """Read XLSX file using openpyxl engine."""
-        content = self.storage.read_file_bytes(batch_id, filename, gateway=gateway)
+        content = self.storage.read_file_bytes(gateway, filename)
         return self._read_excel_from_bytes(content, XLSX_ENGINE)
 
-    def _read_xls_file(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> pd.DataFrame:
+    def _read_xls_file(self, gateway: str, filename: str) -> pd.DataFrame:
         """Read XLS file. Tries openpyxl first, falls back to xlrd."""
         try:
-            content = self.storage.read_file_bytes(batch_id, filename, gateway=gateway)
+            content = self.storage.read_file_bytes(gateway, filename)
             return self._read_excel_from_bytes(content, XLSX_ENGINE)
         except Exception:
             pass
@@ -90,49 +84,48 @@ class DataLoader:
         if isinstance(self.storage, GcsStorage):
             temp_path = None
             try:
-                temp_path = self.storage.get_file_handle_for_xls(batch_id, filename, gateway=gateway)
+                temp_path = self.storage.get_file_handle_for_xls(gateway, filename)
                 return self._read_excel_from_path(temp_path, XLS_ENGINE)
             finally:
                 if temp_path:
                     GcsStorage.cleanup_temp_file(temp_path)
         else:
-            content = self.storage.read_file_bytes(batch_id, filename, gateway=gateway)
+            content = self.storage.read_file_bytes(gateway, filename)
             return self._read_excel_from_bytes(content, XLS_ENGINE)
 
-    def _read_csv_file(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> pd.DataFrame:
+    def _read_csv_file(self, gateway: str, filename: str) -> pd.DataFrame:
         """Read CSV file."""
-        content = self.storage.read_file_bytes(batch_id, filename, gateway=gateway)
+        content = self.storage.read_file_bytes(gateway, filename)
         return self._read_csv_from_bytes(content)
 
-    def _read_file_by_extension(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> pd.DataFrame:
+    def _read_file_by_extension(self, gateway: str, filename: str) -> pd.DataFrame:
         """Read file based on its extension."""
         extension = self.storage.get_file_extension(filename)
 
         if extension == XLSX_EXTENSION:
-            return self._read_xlsx_file(batch_id, filename, gateway=gateway)
+            return self._read_xlsx_file(gateway, filename)
         elif extension == XLS_EXTENSION:
-            return self._read_xls_file(batch_id, filename, gateway=gateway)
+            return self._read_xls_file(gateway, filename)
         elif extension == CSV_EXTENSION:
-            return self._read_csv_file(batch_id, filename, gateway=gateway)
+            return self._read_csv_file(gateway, filename)
         else:
             raise ReadFileException(f"Unsupported file type: '{extension}'")
 
-    def find_gateway_files(self, batch_id: str, gateway_name: str) -> List[str]:
+    def find_gateway_files(self, gateway_name: str) -> List[str]:
         """
-        Find files for a specific gateway in its subdirectory.
+        Find files for a specific gateway in its directory.
 
-        With the new directory structure, files are stored as:
-            {batch_id}/{external_gateway}/{gateway_name}.{ext}
+        Files are stored as:
+            {external_gateway}/{gateway_name}.{ext}
 
         Args:
-            batch_id: The batch identifier.
             gateway_name: Gateway name to find files for.
 
         Returns:
             List of matching filenames.
         """
         external_gateway = derive_external_gateway(gateway_name)
-        gateway_files = self.storage.list_files(batch_id, gateway=external_gateway)
+        gateway_files = self.storage.list_files(external_gateway)
 
         # Match files that start with the gateway name
         gateway_lower = gateway_name.lower()
@@ -145,14 +138,13 @@ class DataLoader:
 
         return matching_files
 
-    def load_gateway_data(self, batch_id: str, gateway_name: str) -> pd.DataFrame:
+    def load_gateway_data(self, gateway_name: str) -> pd.DataFrame:
         """
-        Load data for a specific gateway from a batch.
+        Load data for a specific gateway.
 
-        Finds the file in the gateway's subdirectory and reads it.
+        Finds the file in the gateway's directory and reads it.
 
         Args:
-            batch_id: The batch identifier.
             gateway_name: Gateway name to load data for (e.g., 'equity', 'workpay_equity').
 
         Returns:
@@ -162,28 +154,26 @@ class DataLoader:
             ReadFileException: If no file found for the gateway.
         """
         external_gateway = derive_external_gateway(gateway_name)
-        gateway_files = self.find_gateway_files(batch_id, gateway_name)
+        gateway_files = self.find_gateway_files(gateway_name)
 
         if not gateway_files:
             raise ReadFileException(
-                f"No file found for gateway '{gateway_name}' in batch '{batch_id}'"
+                f"No file found for gateway '{gateway_name}'"
             )
 
-        # Read the first matching file from the gateway subdirectory
         filename = gateway_files[0]
 
         if not self.storage.is_supported_extension(filename):
             extension = self.storage.get_file_extension(filename)
             raise ReadFileException(f"Unsupported file type: '{extension}'")
 
-        return self._read_file_by_extension(batch_id, filename, gateway=external_gateway)
+        return self._read_file_by_extension(external_gateway, filename)
 
-    def load_all_gateway_data(self, batch_id: str, gateway_name: str) -> List[pd.DataFrame]:
+    def load_all_gateway_data(self, gateway_name: str) -> List[pd.DataFrame]:
         """
         Load data from all files for a specific gateway.
 
         Args:
-            batch_id: The batch identifier.
             gateway_name: Gateway name to load data for.
 
         Returns:
@@ -193,56 +183,54 @@ class DataLoader:
             ReadFileException: If no files found for the gateway.
         """
         external_gateway = derive_external_gateway(gateway_name)
-        gateway_files = self.find_gateway_files(batch_id, gateway_name)
+        gateway_files = self.find_gateway_files(gateway_name)
 
         if not gateway_files:
             raise ReadFileException(
-                f"No files found for gateway '{gateway_name}' in batch '{batch_id}'"
+                f"No files found for gateway '{gateway_name}'"
             )
 
         dataframes = []
         for filename in gateway_files:
             if self.storage.is_supported_extension(filename):
-                df = self._read_file_by_extension(batch_id, filename, gateway=external_gateway)
+                df = self._read_file_by_extension(external_gateway, filename)
                 dataframes.append(df)
 
         if not dataframes:
             raise ReadFileException(
-                f"No supported files found for gateway '{gateway_name}' in batch '{batch_id}'"
+                f"No supported files found for gateway '{gateway_name}'"
             )
 
         return dataframes
 
-    def read_file_by_name(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> pd.DataFrame:
+    def read_file_by_name(self, gateway: str, filename: str) -> pd.DataFrame:
         """
         Read a specific file by exact filename.
 
         Args:
-            batch_id: The batch identifier.
+            gateway: Gateway directory.
             filename: Exact filename to read.
-            gateway: Optional gateway subdirectory.
 
         Returns:
             DataFrame with file contents.
         """
-        if not self.storage.file_exists(batch_id, filename, gateway=gateway):
-            raise ReadFileException(f"File not found: '{filename}' in batch '{batch_id}'")
+        if not self.storage.file_exists(gateway, filename):
+            raise ReadFileException(f"File not found: '{filename}' in gateway '{gateway}'")
 
         if not self.storage.is_supported_extension(filename):
             extension = self.storage.get_file_extension(filename)
             raise ReadFileException(f"Unsupported file type: '{extension}'")
 
-        return self._read_file_by_extension(batch_id, filename, gateway=gateway)
+        return self._read_file_by_extension(gateway, filename)
 
-    def list_batch_files(self, batch_id: str, gateway: Optional[str] = None) -> List[str]:
+    def list_gateway_files(self, gateway: str) -> List[str]:
         """
-        List all files in a batch or gateway subdirectory.
+        List all files in a gateway directory.
 
         Args:
-            batch_id: The batch identifier.
-            gateway: Optional gateway subdirectory to list.
+            gateway: Gateway directory to list.
 
         Returns:
             List of filenames.
         """
-        return self.storage.list_files(batch_id, gateway=gateway)
+        return self.storage.list_files(gateway)

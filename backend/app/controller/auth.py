@@ -1,8 +1,7 @@
 """
 Authentication API Endpoints.
 
-Provides 2-step login (credentials + OTP), token refresh, logout,
-forgot password (OTP-based), and password management.
+Provides login, token refresh, logout, forgot password, and password management.
 """
 import logging
 import uuid
@@ -21,29 +20,20 @@ from app.auth.security import (
     hash_password,
     create_access_token,
     create_refresh_token,
-    create_pre_auth_token,
     create_reset_token,
     decode_token,
-    verify_otp as verify_otp_hash,
 )
 from app.auth.config import auth_settings, validate_password_strength
-from app.auth.dependencies import get_current_user, get_pre_auth_user
+from app.auth.dependencies import get_current_user
 from app.sqlModels.authEntities import (
-    User, RefreshToken, LoginSession, UserStatus, AuditLog, OTPPurpose,
+    User, RefreshToken, LoginSession, UserStatus, AuditLog,
 )
-from app.services.otp_service import OTPService
 from app.services.email_service import EmailService
 from app.pydanticModels.authModels import (
     LoginRequest,
-    LoginStep1Response,
-    OTPVerifyRequest,
-    OTPVerifyResponse,
-    OTPResendRequest,
-    OTPResendResponse,
+    LoginResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
-    VerifyResetOTPRequest,
-    VerifyResetOTPResponse,
     ResetPasswordRequest,
     ResetPasswordResponse,
     TokenRefreshRequest,
@@ -81,10 +71,10 @@ def log_audit(
 
 
 # =============================================================================
-# Step 1: Credentials Verification
+# Login
 # =============================================================================
 
-@router.post("/login", response_model=LoginStep1Response)
+@router.post("/login", response_model=LoginResponse)
 @limiter.limit("5/minute")
 async def login(
     request: Request,
@@ -93,14 +83,12 @@ async def login(
     db: Session = Depends(get_database)
 ):
     """
-    Step 1: Verify credentials and send OTP.
+    Verify credentials and issue access/refresh tokens.
 
-    On success, returns a pre_auth_token (5min) and sends a 6-digit OTP
-    to the user's email. The client must call /verify-otp with the OTP
-    code and pre_auth_token to complete authentication.
+    On success, invalidates existing sessions (concurrent session prevention)
+    and creates a new login session.
     """
     ip = request.client.host if request.client else None
-    ua = request.headers.get("user-agent")
 
     # Find user
     stmt = select(User).where(User.username == login_request.username.lower().strip())
@@ -174,108 +162,6 @@ async def login(
     user.failed_login_attempts = 0
     user.locked_until = None
 
-    # Determine OTP strategy
-    otp_source = "email"
-    otp_purpose = OTPPurpose.LOGIN.value
-
-    # For first-time users, check if a valid welcome OTP already exists
-    if user.must_change_password:
-        existing_welcome = OTPService.find_valid_otp(db, user.id, OTPPurpose.WELCOME.value)
-        if existing_welcome:
-            # Welcome OTP still valid — tell the client to use it
-            expires = existing_welcome.expires_at
-            if expires.tzinfo is None:
-                expires = expires.replace(tzinfo=timezone.utc)
-            remaining_seconds = max(0, int((expires - datetime.now(timezone.utc)).total_seconds()))
-
-            pre_auth_token = create_pre_auth_token(user.id, user.username)
-            log_audit(db, "login_step1_success", user.id, "user", str(user.id),
-                      {"otp_source": "welcome_email"}, request)
-            db.commit()
-
-            return LoginStep1Response(
-                pre_auth_token=pre_auth_token,
-                otp_sent=False,
-                otp_expires_in=remaining_seconds,
-                otp_source="welcome_email",
-                resend_available_in=0,
-                message="Enter the verification code from your welcome email."
-            )
-
-    # Generate and send a new OTP
-    lifetime = OTPService.get_lifetime_seconds(otp_purpose)
-    plain_otp, otp_record = OTPService.create_otp(db, user.id, otp_purpose, ip, ua)
-
-    # Send OTP email in background
-    background_tasks.add_task(
-        EmailService.send_login_otp,
-        user.email, plain_otp, user.full_name, lifetime
-    )
-
-    # Calculate resend availability
-    _, resend_remaining = OTPService.can_resend(db, user.id, otp_purpose)
-
-    pre_auth_token = create_pre_auth_token(user.id, user.username)
-
-    log_audit(db, "login_step1_success", user.id, "user", str(user.id),
-              {"otp_source": otp_source}, request)
-    db.commit()
-
-    return LoginStep1Response(
-        pre_auth_token=pre_auth_token,
-        otp_sent=True,
-        otp_expires_in=lifetime,
-        otp_source=otp_source,
-        resend_available_in=resend_remaining,
-        message="A verification code has been sent to your email."
-    )
-
-
-# =============================================================================
-# Step 2: OTP Verification
-# =============================================================================
-
-@router.post("/verify-otp", response_model=OTPVerifyResponse)
-@limiter.limit("10/minute")
-async def verify_otp(
-    request: Request,
-    otp_request: OTPVerifyRequest,
-    db: Session = Depends(get_database)
-):
-    """
-    Step 2: Verify OTP and issue access/refresh tokens.
-
-    Requires a valid pre_auth_token from step 1 and the 6-digit OTP code.
-    On success, invalidates existing sessions (concurrent session prevention)
-    and creates a new login session.
-    """
-    # Decode pre_auth_token
-    payload = decode_token(otp_request.pre_auth_token)
-    if not payload or payload.get("type") != "pre_auth":
-        raise HTTPException(status_code=401, detail="Invalid or expired pre-auth token. Please login again.")
-
-    user_id = int(payload.get("sub"))
-    stmt = select(User).where(User.id == user_id)
-    user = db.execute(stmt).scalar_one_or_none()
-
-    if not user or not user.is_active():
-        raise HTTPException(status_code=401, detail="User account is not active")
-
-    # Try verifying as login OTP first, then as welcome OTP
-    success, error_msg = OTPService.verify(db, user.id, otp_request.otp_code, OTPPurpose.LOGIN.value)
-    if not success:
-        # Try welcome OTP for first-time users
-        if user.must_change_password:
-            success, error_msg = OTPService.verify(db, user.id, otp_request.otp_code, OTPPurpose.WELCOME.value)
-
-    if not success:
-        log_audit(db, "otp_verification_failed", user.id, "user", str(user.id),
-                  {"error": error_msg}, request)
-        db.commit()
-        raise HTTPException(status_code=401, detail=error_msg)
-
-    # --- OTP verified successfully ---
-
     # Invalidate existing active login sessions (concurrent session prevention)
     db.query(LoginSession).filter(
         LoginSession.user_id == user.id,
@@ -326,77 +212,13 @@ async def verify_otp(
 
     logger.info("Login successful", extra={"user_id": user.id, "username": user.username})
 
-    return OTPVerifyResponse(
+    return LoginResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
         expires_in=auth_settings.access_token_expire_minutes * 60,
         must_change_password=user.must_change_password,
         user=UserResponse.model_validate(user),
-    )
-
-
-# =============================================================================
-# OTP Resend
-# =============================================================================
-
-@router.post("/resend-otp", response_model=OTPResendResponse)
-@limiter.limit("3/minute")
-async def resend_otp(
-    request: Request,
-    resend_request: OTPResendRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_database)
-):
-    """
-    Resend OTP for login verification.
-
-    Subject to a 2-minute cooldown between resends.
-    """
-    payload = decode_token(resend_request.pre_auth_token)
-    if not payload or payload.get("type") != "pre_auth":
-        raise HTTPException(status_code=401, detail="Invalid or expired pre-auth token. Please login again.")
-
-    user_id = int(payload.get("sub"))
-    stmt = select(User).where(User.id == user_id)
-    user = db.execute(stmt).scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    # Check cooldown
-    purpose = OTPPurpose.LOGIN.value
-    can_resend, remaining = OTPService.can_resend(db, user.id, purpose)
-    if not can_resend:
-        return OTPResendResponse(
-            otp_sent=False,
-            otp_expires_in=0,
-            resend_available_in=remaining,
-            message=f"Please wait {remaining} seconds before requesting a new code."
-        )
-
-    # Generate new OTP
-    ip = request.client.host if request.client else None
-    ua = request.headers.get("user-agent")
-    lifetime = OTPService.get_lifetime_seconds(purpose)
-    plain_otp, _ = OTPService.create_otp(db, user.id, purpose, ip, ua)
-
-    # Send email in background
-    background_tasks.add_task(
-        EmailService.send_login_otp,
-        user.email, plain_otp, user.full_name, lifetime
-    )
-
-    _, new_remaining = OTPService.can_resend(db, user.id, purpose)
-
-    log_audit(db, "otp_resent", user.id, "user", str(user.id), None, request)
-    db.commit()
-
-    return OTPResendResponse(
-        otp_sent=True,
-        otp_expires_in=lifetime,
-        resend_available_in=new_remaining,
-        message="A new verification code has been sent to your email."
     )
 
 
@@ -413,13 +235,12 @@ async def forgot_password(
     db: Session = Depends(get_database)
 ):
     """
-    Request a password reset OTP.
+    Request a password reset.
 
+    Generates a reset token and sends it via email.
     Always returns success to prevent email enumeration.
     """
-    ip = request.client.host if request.client else None
-    ua = request.headers.get("user-agent")
-    generic_message = "If this email is registered, you will receive a verification code."
+    generic_message = "If this email is registered, you will receive a password reset link."
 
     stmt = select(User).where(User.email == forgot_request.email.lower().strip())
     user = db.execute(stmt).scalar_one_or_none()
@@ -428,65 +249,19 @@ async def forgot_password(
         # Don't reveal whether the email exists
         return ForgotPasswordResponse(message=generic_message)
 
-    # Check cooldown
-    purpose = OTPPurpose.FORGOT_PASSWORD.value
-    can_send, remaining = OTPService.can_resend(db, user.id, purpose)
-    if not can_send:
-        # Still return generic message
-        return ForgotPasswordResponse(message=generic_message)
+    # Generate reset token (10-minute expiry)
+    reset_token = create_reset_token(user.id, user.email)
 
-    # Generate OTP
-    lifetime = OTPService.get_lifetime_seconds(purpose)
-    plain_otp, _ = OTPService.create_otp(db, user.id, purpose, ip, ua)
-
-    # Send email in background
+    # Send email with reset token in background
     background_tasks.add_task(
-        EmailService.send_forgot_password_otp,
-        user.email, plain_otp, user.full_name, lifetime
+        EmailService.send_forgot_password_email,
+        user.email, reset_token, user.full_name
     )
 
     log_audit(db, "forgot_password_requested", user.id, "user", str(user.id), None, request)
     db.commit()
 
     return ForgotPasswordResponse(message=generic_message)
-
-
-@router.post("/verify-reset-otp", response_model=VerifyResetOTPResponse)
-@limiter.limit("5/minute")
-async def verify_reset_otp(
-    request: Request,
-    verify_request: VerifyResetOTPRequest,
-    db: Session = Depends(get_database)
-):
-    """
-    Verify the password reset OTP and issue a reset token.
-    """
-    stmt = select(User).where(User.email == verify_request.email.lower().strip())
-    user = db.execute(stmt).scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(status_code=400, detail="Invalid email or OTP code.")
-
-    success, error_msg = OTPService.verify(
-        db, user.id, verify_request.otp_code, OTPPurpose.FORGOT_PASSWORD.value
-    )
-
-    if not success:
-        log_audit(db, "reset_otp_failed", user.id, "user", str(user.id),
-                  {"error": error_msg}, request)
-        db.commit()
-        raise HTTPException(status_code=400, detail=error_msg)
-
-    # Issue reset token (10min)
-    reset_token = create_reset_token(user.id, user.email)
-
-    log_audit(db, "reset_otp_verified", user.id, "user", str(user.id), None, request)
-    db.commit()
-
-    return VerifyResetOTPResponse(
-        reset_token=reset_token,
-        expires_in=600  # 10 minutes
-    )
 
 
 @router.post("/reset-password", response_model=ResetPasswordResponse)
@@ -522,7 +297,7 @@ async def reset_password(
     # Check password history
     if user.password_history:
         for old_hash in user.password_history:
-            if verify_otp_hash(reset_request.new_password, old_hash):
+            if verify_password(reset_request.new_password, old_hash):
                 raise HTTPException(
                     status_code=400,
                     detail=f"Cannot reuse any of your last {auth_settings.password_history_count} passwords."

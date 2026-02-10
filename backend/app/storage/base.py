@@ -22,19 +22,18 @@ class StorageBackend(ABC):
     Provides a common interface for local and cloud storage operations.
 
     Directory structure:
-        {base_path}/{batch_id}/{gateway_name}/{filename}
+        {base_path}/{gateway}/{filename}
     """
 
     @abstractmethod
-    def save_file(self, batch_id: str, filename: str, content: bytes, gateway: Optional[str] = None) -> str:
+    def save_file(self, gateway: str, filename: str, content: bytes) -> str:
         """
         Save a file to storage.
 
         Args:
-            batch_id: The batch identifier for organizing files.
+            gateway: The gateway name for directory organization.
             filename: Name of the file to save.
             content: File content as bytes.
-            gateway: Optional gateway name for subdirectory organization.
 
         Returns:
             Path or URI where the file was saved.
@@ -42,14 +41,13 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    def read_file_bytes(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> bytes:
+    def read_file_bytes(self, gateway: str, filename: str) -> bytes:
         """
         Read a file's content as bytes.
 
         Args:
-            batch_id: The batch identifier.
+            gateway: The gateway directory.
             filename: Name of the file to read.
-            gateway: Optional gateway subdirectory.
 
         Returns:
             File content as bytes.
@@ -57,13 +55,12 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    def list_files(self, batch_id: str, gateway: Optional[str] = None) -> List[str]:
+    def list_files(self, gateway: str) -> List[str]:
         """
-        List all files in a batch directory or gateway subdirectory.
+        List all files in a gateway directory.
 
         Args:
-            batch_id: The batch identifier.
-            gateway: Optional gateway name to list files in subdirectory.
+            gateway: The gateway name.
 
         Returns:
             List of filenames.
@@ -71,14 +68,13 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    def file_exists(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> bool:
+    def file_exists(self, gateway: str, filename: str) -> bool:
         """
         Check if a file exists in storage.
 
         Args:
-            batch_id: The batch identifier.
+            gateway: The gateway directory.
             filename: Name of the file to check.
-            gateway: Optional gateway subdirectory.
 
         Returns:
             True if file exists, False otherwise.
@@ -86,35 +82,23 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    def ensure_batch_directory(self, batch_id: str) -> None:
+    def ensure_gateway_directory(self, gateway: str) -> None:
         """
-        Ensure the batch directory exists.
+        Ensure the gateway directory exists.
 
         Args:
-            batch_id: The batch identifier.
+            gateway: The gateway name for the directory.
         """
         pass
 
     @abstractmethod
-    def ensure_gateway_directory(self, batch_id: str, gateway: str) -> None:
-        """
-        Ensure the gateway subdirectory exists within a batch directory.
-
-        Args:
-            batch_id: The batch identifier.
-            gateway: The gateway name for the subdirectory.
-        """
-        pass
-
-    @abstractmethod
-    def get_file_handle(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> BinaryIO:
+    def get_file_handle(self, gateway: str, filename: str) -> BinaryIO:
         """
         Get a file handle for reading.
 
         Args:
-            batch_id: The batch identifier.
+            gateway: The gateway directory.
             filename: Name of the file.
-            gateway: Optional gateway subdirectory.
 
         Returns:
             Binary file handle.
@@ -122,62 +106,31 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    def delete_file(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> bool:
+    def delete_file(self, gateway: str, filename: str) -> bool:
         """
         Delete a file from storage.
 
         Args:
-            batch_id: The batch identifier.
+            gateway: The gateway directory.
             filename: Name of the file to delete.
-            gateway: Optional gateway subdirectory.
 
         Returns:
             True if file was deleted, False if file didn't exist.
         """
         pass
 
-    @abstractmethod
-    def delete_batch_directory(self, batch_id: str) -> int:
+    def find_file_by_prefix(self, gateway: str, prefix: str) -> Optional[str]:
         """
-        Delete all files in a batch directory and the directory itself.
+        Find a file in the gateway directory that starts with the given prefix.
 
         Args:
-            batch_id: The batch identifier.
-
-        Returns:
-            Number of files deleted.
-        """
-        pass
-
-    def batch_directory_exists(self, batch_id: str) -> bool:
-        """
-        Check if a batch directory exists in storage.
-
-        Args:
-            batch_id: The batch identifier.
-
-        Returns:
-            True if directory exists, False otherwise.
-        """
-        try:
-            self.list_files(batch_id)
-            return True
-        except Exception:
-            return False
-
-    def find_file_by_prefix(self, batch_id: str, prefix: str, gateway: Optional[str] = None) -> Optional[str]:
-        """
-        Find a file in the batch/gateway directory that starts with the given prefix.
-
-        Args:
-            batch_id: The batch identifier.
+            gateway: The gateway directory.
             prefix: The filename prefix to search for.
-            gateway: Optional gateway subdirectory.
 
         Returns:
             Filename if found, None otherwise.
         """
-        files = self.list_files(batch_id, gateway)
+        files = self.list_files(gateway)
         for filename in files:
             if filename.startswith(prefix):
                 return filename

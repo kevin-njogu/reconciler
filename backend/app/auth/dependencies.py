@@ -117,59 +117,6 @@ def get_current_user(
     return user
 
 
-def get_pre_auth_user(
-    request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    db: Session = Depends(get_database)
-):
-    """
-    Get user from a pre-auth token (issued after credential verification).
-
-    Used for OTP verification and resend endpoints only.
-
-    Raises:
-        HTTPException 401: If pre-auth token is invalid or expired.
-    """
-    from app.sqlModels.authEntities import User
-
-    if credentials is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Pre-auth token required",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    token = credentials.credentials
-    payload = decode_token(token)
-
-    if payload is None or payload.get("type") != "pre_auth":
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or expired pre-auth token. Please login again.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    user_id = payload.get("sub")
-    if user_id is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid token payload",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    stmt = select(User).where(User.id == int(user_id))
-    user = db.execute(stmt).scalar_one_or_none()
-
-    if user is None:
-        raise HTTPException(
-            status_code=401,
-            detail="User not found",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    return user
-
-
 def require_active_user(
     user = Depends(get_current_user),
     db: Session = Depends(get_database)

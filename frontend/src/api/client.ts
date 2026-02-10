@@ -67,14 +67,11 @@ apiClient.interceptors.response.use(
 
     // If 401 and not already retrying
     if (error.response?.status === 401 && !originalRequest._retry) {
-      // Don't retry on auth endpoints (login, OTP, refresh, reset)
+      // Don't retry on auth endpoints (login, refresh, reset)
       if (
         originalRequest.url?.includes('/auth/login') ||
         originalRequest.url?.includes('/auth/refresh') ||
-        originalRequest.url?.includes('/auth/verify-otp') ||
-        originalRequest.url?.includes('/auth/resend-otp') ||
         originalRequest.url?.includes('/auth/forgot-password') ||
-        originalRequest.url?.includes('/auth/verify-reset-otp') ||
         originalRequest.url?.includes('/auth/reset-password')
       ) {
         return Promise.reject(error);

@@ -1,18 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Shield, CheckCircle, XCircle, Clock, ArrowLeftRight } from 'lucide-react';
-import { operationsApi, batchesApi, getErrorMessage } from '@/api';
+import { Shield, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { operationsApi, getErrorMessage } from '@/api';
 import type { UnreconciledTransaction } from '@/api/operations';
 import {
   Button,
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
   PageLoading,
   Alert,
-  Select,
   Modal,
   ModalFooter,
 } from '@/components/ui';
@@ -25,9 +20,6 @@ export function AuthorizationPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [selectedBatchId, setSelectedBatchId] = useState<string>(
-    searchParams.get('batch_id') || ''
-  );
   const [selectedGateway, setSelectedGateway] = useState<string>(
     searchParams.get('gateway') || ''
   );
@@ -46,27 +38,14 @@ export function AuthorizationPage() {
   const [bulkActionType, setBulkActionType] = useState<'authorize' | 'reject'>('authorize');
   const [bulkNote, setBulkNote] = useState('');
 
-  // Fetch only pending batches
-  const { data: batchesData, isLoading: batchesLoading } = useQuery({
-    queryKey: ['batches', 'pending'],
-    queryFn: () => batchesApi.list({ status: 'pending' }),
-  });
-
-  const batches = batchesData?.batches;
-
-  // Fetch pending authorizations (optionally filtered by batch)
+  // Fetch pending authorizations
   const {
     data: pendingData,
     isLoading: pendingLoading,
     error: pendingError,
   } = useQuery({
-    queryKey: ['pending-authorization', selectedBatchId, selectedGateway],
-    queryFn: () =>
-      operationsApi.getPendingAuthorization(
-        selectedBatchId || undefined,
-        selectedGateway || undefined
-      ),
-    enabled: !!selectedBatchId,
+    queryKey: ['pending-authorization', selectedGateway],
+    queryFn: () => operationsApi.getPendingAuthorization(selectedGateway || undefined),
     staleTime: 0,
   });
 
@@ -84,7 +63,6 @@ export function AuthorizationPage() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['pending-authorization'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['unreconciled'], refetchType: 'all' });
-      queryClient.invalidateQueries({ queryKey: ['batches'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['transactions'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' });
       toast.success(
@@ -111,7 +89,6 @@ export function AuthorizationPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['pending-authorization'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['unreconciled'], refetchType: 'all' });
-      queryClient.invalidateQueries({ queryKey: ['batches'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['transactions'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' });
       toast.success(data.message);
@@ -121,23 +98,11 @@ export function AuthorizationPage() {
     onError: (err) => toast.error(getErrorMessage(err)),
   });
 
-  const handleBatchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const batchId = e.target.value;
-    setSelectedBatchId(batchId);
-    setSelectedGateway('');
-    setSelectedIds(new Set());
-    setSearchParams(batchId ? { batch_id: batchId } : {});
-  };
-
   const handleGatewayChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const gateway = e.target.value;
     setSelectedGateway(gateway);
     setSelectedIds(new Set());
-    const params: Record<string, string> = { batch_id: selectedBatchId };
-    if (gateway) {
-      params.gateway = gateway;
-    }
-    setSearchParams(params);
+    setSearchParams(gateway ? { gateway } : {});
   };
 
   const openActionModal = (
@@ -211,20 +176,11 @@ export function AuthorizationPage() {
     setSelectedIds(newSelection);
   };
 
-  const batchOptions = [
-    { value: '', label: 'Select a pending batch...' },
-    ...(batches?.map((b) => ({
-      value: b.batch_id,
-      label: b.batch_id,
-    })) || []),
-  ];
-
-  // Build unified gateway options (extract base gateway names from pending data)
+  // Build unified gateway options from pending authorization groups
   const getBaseGateway = (gateway: string) => {
     return gateway.replace(/_internal$/, '').replace(/_external$/, '');
   };
 
-  // Get unique base gateways from pending authorization groups
   const uniqueBaseGateways = useMemo(() => {
     if (!pendingData?.groups) return [];
     const gateways = pendingData.groups.map((g) => getBaseGateway(g.gateway));
@@ -232,14 +188,12 @@ export function AuthorizationPage() {
   }, [pendingData?.groups]);
 
   const gatewayOptions = [
-    { value: '', label: 'Select gateway...' },
+    { value: '', label: 'All gateways' },
     ...uniqueBaseGateways.map((g) => ({
       value: g,
       label: g.charAt(0).toUpperCase() + g.slice(1),
     })),
   ];
-
-  if (batchesLoading) return <PageLoading />;
 
   return (
     <div className="space-y-6">
@@ -251,60 +205,34 @@ export function AuthorizationPage() {
             Review and authorize manually reconciled transactions
           </p>
         </div>
-        {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-600">{selectedIds.size} selected</span>
-            <Button variant="primary" size="sm" onClick={() => openBulkModal('authorize')}>
-              <CheckCircle className="h-4 w-4 mr-1" />
-              Authorize All
-            </Button>
-            <Button variant="danger" size="sm" onClick={() => openBulkModal('reject')}>
-              <XCircle className="h-4 w-4 mr-1" />
-              Reject All
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {/* Centered Half-Page Selection Card */}
-      <div className="flex justify-center">
-        <Card className="w-full max-w-xl">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <ArrowLeftRight className="h-5 w-5 text-primary-600" />
-              Select Batch and Gateway
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Select
-              label="Batch"
-              options={batchOptions}
-              value={selectedBatchId}
-              onChange={handleBatchChange}
-              placeholder="Select a pending batch..."
-            />
-            <Select
-              label="Gateway"
-              options={gatewayOptions}
-              value={selectedGateway}
-              onChange={handleGatewayChange}
-              placeholder={selectedBatchId ? 'Select gateway...' : 'Select batch first'}
-              disabled={!selectedBatchId || pendingLoading}
-            />
-          </CardContent>
-        </Card>
+        <div className="flex items-center gap-3">
+          <select
+            className="px-3 py-2 border border-neutral-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
+            value={selectedGateway}
+            onChange={handleGatewayChange}
+          >
+            {gatewayOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          {selectedIds.size > 0 && (
+            <>
+              <span className="text-sm text-gray-600">{selectedIds.size} selected</span>
+              <Button variant="primary" size="sm" onClick={() => openBulkModal('authorize')}>
+                <CheckCircle className="h-4 w-4 mr-1" />
+                Authorize All
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => openBulkModal('reject')}>
+                <XCircle className="h-4 w-4 mr-1" />
+                Reject All
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Content */}
-      {!selectedBatchId ? (
-        <Alert variant="info" title="Select a batch">
-          Please select a pending batch to view transactions awaiting authorization.
-        </Alert>
-      ) : !selectedGateway ? (
-        <Alert variant="info" title="Select a gateway">
-          Please select a gateway to view transactions awaiting authorization.
-        </Alert>
-      ) : pendingLoading ? (
+      {pendingLoading ? (
         <PageLoading />
       ) : pendingError ? (
         <Alert variant="error" title="Error loading pending authorizations">
@@ -312,7 +240,7 @@ export function AuthorizationPage() {
         </Alert>
       ) : pendingData?.total_count === 0 ? (
         <Alert variant="success" title="No pending authorizations">
-          All manually reconciled transactions have been processed for this batch and gateway.
+          All manually reconciled transactions have been processed{selectedGateway ? ` for ${selectedGateway}` : ''}.
         </Alert>
       ) : (
         <>

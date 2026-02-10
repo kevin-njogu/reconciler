@@ -1,26 +1,17 @@
 """SQLAlchemy models for database entities."""
-from app.sqlModels.batchEntities import Batch, BatchFile, BatchDeleteRequest, BatchStatus, DeleteRequestStatus
+from app.sqlModels.runEntities import ReconciliationRun, UploadedFile
 from app.sqlModels.transactionEntities import Transaction, Gateway, TransactionType, ReconciliationStatus, AuthorizationStatus
-from app.sqlModels.gatewayEntities import GatewayConfig, GatewayChangeRequest
+from app.sqlModels.gatewayEntities import GatewayChangeRequest, GatewayFileConfig
+from app.sqlModels.gatewayEntities import Gateway as UnifiedGateway
 from app.sqlModels.gatewayEntities import ChangeRequestStatus as GatewayChangeRequestStatus
 from app.sqlModels.gatewayEntities import ChangeRequestType as GatewayChangeRequestType
+from app.sqlModels.gatewayEntities import FileConfigType
 from app.sqlModels.authEntities import User, RefreshToken, AuditLog, UserRole, UserStatus
-from app.sqlModels.settingsEntities import (
-    DateFormat,
-    Country,
-    Currency,
-    ReconciliationKeyword,
-    SystemSetting,
-    KeywordType,
-)
 
 __all__ = [
-    # Batch models
-    "Batch",
-    "BatchFile",
-    "BatchDeleteRequest",
-    "BatchStatus",
-    "DeleteRequestStatus",
+    # Run models
+    "ReconciliationRun",
+    "UploadedFile",
     # Transaction models
     "Transaction",
     "Gateway",
@@ -28,21 +19,16 @@ __all__ = [
     "ReconciliationStatus",
     "AuthorizationStatus",
     # Gateway models
-    "GatewayConfig",
+    "UnifiedGateway",
+    "GatewayFileConfig",
     "GatewayChangeRequest",
     "GatewayChangeRequestStatus",
     "GatewayChangeRequestType",
+    "FileConfigType",
     # Auth models
     "User",
     "RefreshToken",
     "AuditLog",
     "UserRole",
     "UserStatus",
-    # Settings models
-    "DateFormat",
-    "Country",
-    "Currency",
-    "ReconciliationKeyword",
-    "SystemSetting",
-    "KeywordType",
 ]

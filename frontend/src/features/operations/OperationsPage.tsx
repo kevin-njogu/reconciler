@@ -1,18 +1,13 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeftRight, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
-import { operationsApi, batchesApi, getErrorMessage } from '@/api';
+import { CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { operationsApi, getErrorMessage } from '@/api';
 import type { UnreconciledTransaction } from '@/api/operations';
 import {
   Button,
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
   PageLoading,
   Alert,
-  Select,
   Modal,
   ModalFooter,
 } from '@/components/ui';
@@ -20,26 +15,30 @@ import { useToast } from '@/hooks/useToast';
 import { formatCurrency } from '@/lib/utils';
 import { SimpleSideBySideView } from './SimpleSideBySideView';
 
-// Predefined reconciliation reasons
-const RECONCILIATION_REASONS = [
-  { value: '', label: 'Select a reason...' },
-  { value: 'MMF Funding', label: 'MMF Funding' },
-  { value: 'Utility Funding', label: 'Utility Funding' },
-  { value: 'Wallet Refund', label: 'Wallet Refund' },
-  { value: 'InterCompany', label: 'InterCompany' },
-  { value: 'Bank Funding', label: 'Bank Funding' },
-  { value: 'FX Conversion', label: 'FX Conversion' },
-  { value: 'Other', label: 'Other (Specify below)' },
+// Transaction type options by gateway side
+const EXTERNAL_TRANSACTION_TYPES = [
+  { value: '', label: 'Select type...' },
+  { value: 'deposit', label: 'Deposit' },
+  { value: 'debit', label: 'Debit' },
+  { value: 'charge', label: 'Charge' },
 ];
+
+const INTERNAL_TRANSACTION_TYPES = [
+  { value: '', label: 'Select type...' },
+  { value: 'payout', label: 'Payout' },
+  { value: 'refund', label: 'Refund' },
+];
+
+function getTransactionTypeOptions(gateway: string) {
+  if (gateway.endsWith('_internal')) return INTERNAL_TRANSACTION_TYPES;
+  return EXTERNAL_TRANSACTION_TYPES;
+}
 
 export function OperationsPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [selectedBatchId, setSelectedBatchId] = useState<string>(
-    searchParams.get('batch_id') || ''
-  );
   const [selectedGateway, setSelectedGateway] = useState<string>(
     searchParams.get('gateway') || ''
   );
@@ -52,21 +51,13 @@ export function OperationsPage() {
   const [selectedTransaction, setSelectedTransaction] = useState<UnreconciledTransaction | null>(
     null
   );
-  const [selectedReason, setSelectedReason] = useState('');
-  const [customReason, setCustomReason] = useState('');
+  const [selectedTxnType, setSelectedTxnType] = useState('');
+  const [comment, setComment] = useState('');
 
   // Bulk modal state
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
-  const [bulkSelectedReason, setBulkSelectedReason] = useState('');
-  const [bulkCustomReason, setBulkCustomReason] = useState('');
-
-  // Fetch only pending batches
-  const { data: batchesData, isLoading: batchesLoading } = useQuery({
-    queryKey: ['batches', 'pending'],
-    queryFn: () => batchesApi.list({ status: 'pending' }),
-  });
-
-  const batches = batchesData?.batches;
+  const [bulkTxnType, setBulkTxnType] = useState('');
+  const [bulkComment, setBulkComment] = useState('');
 
   // Fetch unreconciled transactions
   const {
@@ -74,19 +65,17 @@ export function OperationsPage() {
     isLoading: unreconciledLoading,
     error: unreconciledError,
   } = useQuery({
-    queryKey: ['unreconciled', selectedBatchId, selectedGateway],
-    queryFn: () => operationsApi.getUnreconciled(selectedBatchId, selectedGateway || undefined),
-    enabled: !!selectedBatchId,
+    queryKey: ['unreconciled', selectedGateway],
+    queryFn: () => operationsApi.getUnreconciled(selectedGateway || undefined),
   });
 
   // Manual reconciliation mutation
   const manualReconcileMutation = useMutation({
-    mutationFn: ({ transactionId, note }: { transactionId: number; note: string }) =>
-      operationsApi.manualReconcile(transactionId, note),
+    mutationFn: ({ transactionId, transactionType, note }: { transactionId: number; transactionType: string; note: string }) =>
+      operationsApi.manualReconcile(transactionId, transactionType, note),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unreconciled'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['pending-authorization'], refetchType: 'all' });
-      queryClient.invalidateQueries({ queryKey: ['batches'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['transactions'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' });
       toast.success('Transaction submitted for authorization');
@@ -97,12 +86,11 @@ export function OperationsPage() {
 
   // Bulk manual reconciliation mutation
   const bulkReconcileMutation = useMutation({
-    mutationFn: ({ transactionIds, note }: { transactionIds: number[]; note: string }) =>
-      operationsApi.manualReconcileBulk(transactionIds, note),
+    mutationFn: ({ transactionIds, transactionType, note }: { transactionIds: number[]; transactionType: string; note: string }) =>
+      operationsApi.manualReconcileBulk(transactionIds, transactionType, note),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['unreconciled'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['pending-authorization'], refetchType: 'all' });
-      queryClient.invalidateQueries({ queryKey: ['batches'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['transactions'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' });
       toast.success(data.message);
@@ -112,55 +100,40 @@ export function OperationsPage() {
     onError: (err) => toast.error(getErrorMessage(err)),
   });
 
-  const handleBatchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const batchId = e.target.value;
-    setSelectedBatchId(batchId);
-    setSelectedGateway('');
-    setSelectedIds(new Set());
-    setSearchParams(batchId ? { batch_id: batchId } : {});
-  };
-
   const handleGatewayChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const gateway = e.target.value;
     setSelectedGateway(gateway);
     setSelectedIds(new Set());
-    const params: Record<string, string> = { batch_id: selectedBatchId };
-    if (gateway) {
-      params.gateway = gateway;
-    }
-    setSearchParams(params);
+    setSearchParams(gateway ? { gateway } : {});
   };
 
   const openReconcileModal = (transaction: UnreconciledTransaction) => {
     setSelectedTransaction(transaction);
-    setSelectedReason('');
-    setCustomReason('');
+    setSelectedTxnType('');
+    setComment('');
     setReconcileModalOpen(true);
   };
 
   const closeReconcileModal = () => {
     setReconcileModalOpen(false);
     setSelectedTransaction(null);
-    setSelectedReason('');
-    setCustomReason('');
-  };
-
-  const getReconcileNote = (): string => {
-    if (selectedReason === 'Other') {
-      return customReason.trim();
-    }
-    return selectedReason;
+    setSelectedTxnType('');
+    setComment('');
   };
 
   const handleSubmitReconcile = () => {
-    const note = getReconcileNote();
-    if (!selectedTransaction || !note) {
-      toast.error('Please select a reason for manual reconciliation');
+    if (!selectedTransaction || !selectedTxnType) {
+      toast.error('Please select a transaction type');
+      return;
+    }
+    if (!comment.trim()) {
+      toast.error('Please enter a comment');
       return;
     }
     manualReconcileMutation.mutate({
       transactionId: selectedTransaction.id,
-      note,
+      transactionType: selectedTxnType,
+      note: comment.trim(),
     });
   };
 
@@ -170,33 +143,30 @@ export function OperationsPage() {
       toast.error('Please select at least one transaction');
       return;
     }
-    setBulkSelectedReason('');
-    setBulkCustomReason('');
+    setBulkTxnType('');
+    setBulkComment('');
     setBulkModalOpen(true);
   };
 
   const closeBulkModal = () => {
     setBulkModalOpen(false);
-    setBulkSelectedReason('');
-    setBulkCustomReason('');
-  };
-
-  const getBulkReconcileNote = (): string => {
-    if (bulkSelectedReason === 'Other') {
-      return bulkCustomReason.trim();
-    }
-    return bulkSelectedReason;
+    setBulkTxnType('');
+    setBulkComment('');
   };
 
   const handleBulkReconcile = () => {
-    const note = getBulkReconcileNote();
-    if (!note) {
-      toast.error('Please select a reason for manual reconciliation');
+    if (!bulkTxnType) {
+      toast.error('Please select a transaction type');
+      return;
+    }
+    if (!bulkComment.trim()) {
+      toast.error('Please enter a comment');
       return;
     }
     bulkReconcileMutation.mutate({
       transactionIds: Array.from(selectedIds),
-      note,
+      transactionType: bulkTxnType,
+      note: bulkComment.trim(),
     });
   };
 
@@ -224,14 +194,6 @@ export function OperationsPage() {
     setSelectedIds(newSelection);
   };
 
-  const batchOptions = [
-    { value: '', label: 'Select a pending batch...' },
-    ...(batches?.map((b) => ({
-      value: b.batch_id,
-      label: b.batch_id,
-    })) || []),
-  ];
-
   // Build unified gateway options (extract base gateway names)
   const getBaseGateway = (gateway: string) => {
     return gateway.replace(/_internal$/, '').replace(/_external$/, '');
@@ -245,14 +207,12 @@ export function OperationsPage() {
   );
 
   const gatewayOptions = [
-    { value: '', label: 'Select gateway...' },
+    { value: '', label: 'All gateways' },
     ...uniqueBaseGateways.map((g) => ({
       value: g,
       label: g.charAt(0).toUpperCase() + g.slice(1),
     })),
   ];
-
-  if (batchesLoading) return <PageLoading />;
 
   return (
     <div className="space-y-6">
@@ -264,56 +224,30 @@ export function OperationsPage() {
             View and manually reconcile unreconciled transactions
           </p>
         </div>
-        {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-600">{selectedIds.size} selected</span>
-            <Button variant="primary" onClick={openBulkModal}>
-              <CheckCircle2 className="h-4 w-4 mr-2" />
-              Reconcile Selected
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {/* Centered Half-Page Selection Card */}
-      <div className="flex justify-center">
-        <Card className="w-full max-w-xl">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <ArrowLeftRight className="h-5 w-5 text-primary-600" />
-              Select Batch and Gateway
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Select
-              label="Batch"
-              options={batchOptions}
-              value={selectedBatchId}
-              onChange={handleBatchChange}
-              placeholder="Select a pending batch..."
-            />
-            <Select
-              label="Gateway"
-              options={gatewayOptions}
-              value={selectedGateway}
-              onChange={handleGatewayChange}
-              placeholder={selectedBatchId ? 'Select gateway...' : 'Select batch first'}
-              disabled={!selectedBatchId || unreconciledLoading}
-            />
-          </CardContent>
-        </Card>
+        <div className="flex items-center gap-3">
+          <select
+            className="px-3 py-2 border border-neutral-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
+            value={selectedGateway}
+            onChange={handleGatewayChange}
+          >
+            {gatewayOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          {selectedIds.size > 0 && (
+            <>
+              <span className="text-sm text-gray-600">{selectedIds.size} selected</span>
+              <Button variant="primary" onClick={openBulkModal}>
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Reconcile Selected
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Content */}
-      {!selectedBatchId ? (
-        <Alert variant="info" title="Select a batch">
-          Please select a pending batch to view unreconciled transactions.
-        </Alert>
-      ) : !selectedGateway ? (
-        <Alert variant="info" title="Select a gateway">
-          Please select a gateway to view unreconciled transactions.
-        </Alert>
-      ) : unreconciledLoading ? (
+      {unreconciledLoading ? (
         <PageLoading />
       ) : unreconciledError ? (
         <Alert variant="error" title="Error loading transactions">
@@ -321,7 +255,7 @@ export function OperationsPage() {
         </Alert>
       ) : unreconciledData?.total_count === 0 ? (
         <Alert variant="success" title="All transactions reconciled">
-          There are no unreconciled transactions for this batch and gateway.
+          There are no unreconciled transactions{selectedGateway ? ` for ${selectedGateway}` : ''}.
         </Alert>
       ) : (
         <>
@@ -357,7 +291,7 @@ export function OperationsPage() {
         isOpen={reconcileModalOpen}
         onClose={closeReconcileModal}
         title="Manual Reconciliation"
-        description="Select a reason for manually reconciling this transaction"
+        description="Classify and reconcile this transaction"
         size="md"
       >
         {selectedTransaction && (
@@ -386,39 +320,35 @@ export function OperationsPage() {
               </div>
             </div>
 
-            {/* Reason Selection */}
+            {/* Transaction Type Selection */}
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-1">
-                Reason for Manual Reconciliation <span className="text-danger-500">*</span>
+                Transaction Type <span className="text-danger-500">*</span>
               </label>
               <select
                 className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
-                value={selectedReason}
-                onChange={(e) => setSelectedReason(e.target.value)}
+                value={selectedTxnType}
+                onChange={(e) => setSelectedTxnType(e.target.value)}
               >
-                {RECONCILIATION_REASONS.map((reason) => (
-                  <option key={reason.value} value={reason.value}>
-                    {reason.label}
-                  </option>
+                {getTransactionTypeOptions(selectedTransaction.gateway).map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>
 
-            {/* Custom Reason Input (only shown when "Other" is selected) */}
-            {selectedReason === 'Other' && (
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">
-                  Specify Reason <span className="text-danger-500">*</span>
-                </label>
-                <textarea
-                  className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
-                  rows={3}
-                  placeholder="Enter your custom reason..."
-                  value={customReason}
-                  onChange={(e) => setCustomReason(e.target.value)}
-                />
-              </div>
-            )}
+            {/* Comment */}
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1">
+                Comment <span className="text-danger-500">*</span>
+              </label>
+              <textarea
+                className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
+                rows={3}
+                placeholder="Reason for manual reconciliation..."
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+              />
+            </div>
 
             {/* Warning */}
             <div className="flex items-start gap-2 p-3 bg-warning-50 border border-warning-200 rounded-lg">
@@ -438,7 +368,7 @@ export function OperationsPage() {
             variant="primary"
             onClick={handleSubmitReconcile}
             isLoading={manualReconcileMutation.isPending}
-            disabled={!selectedReason || (selectedReason === 'Other' && !customReason.trim())}
+            disabled={!selectedTxnType || !comment.trim()}
           >
             Submit for Authorization
           </Button>
@@ -462,39 +392,38 @@ export function OperationsPage() {
             </p>
           </div>
 
-          {/* Reason Selection */}
+          {/* Transaction Type Selection */}
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-1">
-              Reason for Manual Reconciliation <span className="text-danger-500">*</span>
+              Transaction Type <span className="text-danger-500">*</span>
             </label>
             <select
               className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
-              value={bulkSelectedReason}
-              onChange={(e) => setBulkSelectedReason(e.target.value)}
+              value={bulkTxnType}
+              onChange={(e) => setBulkTxnType(e.target.value)}
             >
-              {RECONCILIATION_REASONS.map((reason) => (
-                <option key={reason.value} value={reason.value}>
-                  {reason.label}
-                </option>
-              ))}
+              <option value="">Select type...</option>
+              <option value="deposit">Deposit</option>
+              <option value="debit">Debit</option>
+              <option value="charge">Charge</option>
+              <option value="payout">Payout</option>
+              <option value="refund">Refund</option>
             </select>
           </div>
 
-          {/* Custom Reason Input (only shown when "Other" is selected) */}
-          {bulkSelectedReason === 'Other' && (
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-1">
-                Specify Reason <span className="text-danger-500">*</span>
-              </label>
-              <textarea
-                className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
-                rows={3}
-                placeholder="Enter your custom reason..."
-                value={bulkCustomReason}
-                onChange={(e) => setBulkCustomReason(e.target.value)}
-              />
-            </div>
-          )}
+          {/* Comment */}
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">
+              Comment <span className="text-danger-500">*</span>
+            </label>
+            <textarea
+              className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
+              rows={3}
+              placeholder="Reason for manual reconciliation..."
+              value={bulkComment}
+              onChange={(e) => setBulkComment(e.target.value)}
+            />
+          </div>
 
           {/* Warning */}
           <div className="flex items-start gap-2 p-3 bg-warning-50 border border-warning-200 rounded-lg">
@@ -513,9 +442,7 @@ export function OperationsPage() {
             variant="primary"
             onClick={handleBulkReconcile}
             isLoading={bulkReconcileMutation.isPending}
-            disabled={
-              !bulkSelectedReason || (bulkSelectedReason === 'Other' && !bulkCustomReason.trim())
-            }
+            disabled={!bulkTxnType || !bulkComment.trim()}
           >
             Submit {selectedIds.size} for Authorization
           </Button>

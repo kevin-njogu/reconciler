@@ -16,6 +16,7 @@ import {
   TableCell,
   TableEmpty,
   Badge,
+  Pagination,
   PageLoading,
   Alert,
   Modal,
@@ -48,15 +49,17 @@ export function GatewayApprovalPage() {
   const [actionType, setActionType] = useState<'approve' | 'reject'>('approve');
   const [rejectionReason, setRejectionReason] = useState('');
   const [statusFilter, setStatusFilter] = useState<ChangeRequestStatus | 'all'>('pending');
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
 
   // Fetch change requests
   const { data: changeRequestsData, isLoading, error } = useQuery({
-    queryKey: ['gateway-change-requests', statusFilter],
+    queryKey: ['gateway-change-requests', statusFilter, page],
     queryFn: () =>
       statusFilter === 'pending'
-        ? gatewaysApi.getPendingChangeRequests()
-        : gatewaysApi.getAllChangeRequests(statusFilter === 'all' ? undefined : statusFilter),
-    staleTime: 0, // Always refetch to get latest status
+        ? gatewaysApi.getPendingChangeRequests(page, pageSize)
+        : gatewaysApi.getAllChangeRequests(statusFilter === 'all' ? undefined : statusFilter, page, pageSize),
+    staleTime: 0,
   });
 
   // Review mutation
@@ -64,10 +67,7 @@ export function GatewayApprovalPage() {
     mutationFn: ({ requestId, approved, rejectionReason }: { requestId: number; approved: boolean; rejectionReason?: string }) =>
       gatewaysApi.reviewChangeRequest(requestId, { approved, rejection_reason: rejectionReason }),
     onSuccess: (_, variables) => {
-      // Invalidate all gateway-related queries to ensure UI updates everywhere
       queryClient.invalidateQueries({ queryKey: ['gateway-change-requests'], refetchType: 'all' });
-      queryClient.invalidateQueries({ queryKey: ['gateway-configs'], refetchType: 'all' });
-      queryClient.invalidateQueries({ queryKey: ['gateways'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['unified-gateways'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['my-gateway-requests'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['available-gateways'], refetchType: 'all' });
@@ -105,47 +105,37 @@ export function GatewayApprovalPage() {
       <div className="space-y-1 text-sm">
         {request.request_type === 'create' && (
           <>
-            <div><span className="text-gray-500">Type:</span> {String(changes.gateway_type)}</div>
             <div><span className="text-gray-500">Display Name:</span> {String(changes.display_name)}</div>
-            <div><span className="text-gray-500">Country:</span> {String(changes.country)}</div>
-            <div><span className="text-gray-500">Currency:</span> {String(changes.currency)}</div>
-            {changes.date_format && (
-              <div><span className="text-gray-500">Date Format:</span> {String(changes.date_format)}</div>
+            {changes.country && (
+              <div><span className="text-gray-500">Country:</span> {String(changes.country)}</div>
             )}
-            {changes.charge_keywords && (changes.charge_keywords as string[]).length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                <span className="text-gray-500">Keywords:</span>
-                {(changes.charge_keywords as string[]).slice(0, 2).map((kw, i) => (
-                  <Badge key={i} variant="default" className="text-xs">{kw}</Badge>
-                ))}
-                {(changes.charge_keywords as string[]).length > 2 && (
-                  <Badge variant="default" className="text-xs">+{(changes.charge_keywords as string[]).length - 2}</Badge>
-                )}
-              </div>
+            {changes.currency_code && (
+              <div><span className="text-gray-500">Currency:</span> {String(changes.currency_code)}</div>
+            )}
+            {changes.external_config && (
+              <div><span className="text-gray-500">External:</span> {String((changes.external_config as Record<string, unknown>).name)}</div>
+            )}
+            {changes.internal_config && (
+              <div><span className="text-gray-500">Internal:</span> {String((changes.internal_config as Record<string, unknown>).name)}</div>
             )}
           </>
         )}
         {request.request_type === 'update' && (
           <>
             {changes.display_name && (
-              <div><span className="text-gray-500">New Display Name:</span> {String(changes.display_name)}</div>
+              <div><span className="text-gray-500">Display Name:</span> {String(changes.display_name)}</div>
             )}
             {changes.country && (
-              <div><span className="text-gray-500">New Country:</span> {String(changes.country)}</div>
+              <div><span className="text-gray-500">Country:</span> {String(changes.country)}</div>
             )}
-            {changes.currency && (
-              <div><span className="text-gray-500">New Currency:</span> {String(changes.currency)}</div>
+            {changes.currency_code && (
+              <div><span className="text-gray-500">Currency:</span> {String(changes.currency_code)}</div>
             )}
-            {changes.date_format && (
-              <div><span className="text-gray-500">New Date Format:</span> {String(changes.date_format)}</div>
+            {changes.external_config && (
+              <div><span className="text-gray-500">External:</span> {String((changes.external_config as Record<string, unknown>).name)}</div>
             )}
-            {changes.charge_keywords && (changes.charge_keywords as string[]).length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                <span className="text-gray-500">New Keywords:</span>
-                {(changes.charge_keywords as string[]).slice(0, 2).map((kw, i) => (
-                  <Badge key={i} variant="default" className="text-xs">{kw}</Badge>
-                ))}
-              </div>
+            {changes.internal_config && (
+              <div><span className="text-gray-500">Internal:</span> {String((changes.internal_config as Record<string, unknown>).name)}</div>
             )}
           </>
         )}
@@ -182,7 +172,7 @@ export function GatewayApprovalPage() {
         <div className="flex items-center gap-4">
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as ChangeRequestStatus | 'all')}
+            onChange={(e) => { setStatusFilter(e.target.value as ChangeRequestStatus | 'all'); setPage(1); }}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
           >
             <option value="pending">Pending</option>
@@ -261,7 +251,7 @@ export function GatewayApprovalPage() {
                                 <Settings className="h-4 w-4 text-gray-600" />
                               </div>
                               <div>
-                                <code className="font-mono">{request.gateway_name}</code>
+                                <span className="font-medium">{request.gateway_display_name}</span>
                               </div>
                             </div>
                           </TableCell>
@@ -326,6 +316,18 @@ export function GatewayApprovalPage() {
               </Table>
             </CardContent>
           </Card>
+
+          {/* Pagination */}
+          {(changeRequestsData?.total_pages || 1) > 1 && (
+            <Pagination
+              currentPage={page}
+              totalPages={changeRequestsData?.total_pages || 1}
+              onPageChange={setPage}
+              totalItems={changeRequestsData?.count}
+              pageSize={pageSize}
+              showItemCount
+            />
+          )}
         </>
       )}
 
@@ -351,7 +353,7 @@ export function GatewayApprovalPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">Gateway</span>
-                <code className="font-mono">{selectedRequest.gateway_name}</code>
+                <span className="font-medium">{selectedRequest.gateway_display_name}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">Requested By</span>

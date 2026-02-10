@@ -7,15 +7,15 @@ A full-stack financial reconciliation platform built with FastAPI and React. Aut
 - **Multi-Gateway Support**: Reconcile transactions from multiple payment gateways (Equity Bank, KCB, M-Pesa) with configurable gateway settings
 - **Automated Matching**: Intelligent transaction matching using composite keys (Reference + Amount + Gateway)
 - **Maker-Checker Workflow**: Role-based access control with separation of duties for critical operations
-- **2-Step OTP Authentication**: Secure login with email-based OTP verification, concurrent session prevention, and account lockout
+- **Secure Authentication**: Email + password login with JWT tokens, concurrent session prevention, and account lockout
 - **Password Security**: Configurable password policy, 90-day expiry, password history tracking, and forced change on first login
-- **Forgot Password Flow**: Self-service password reset via email OTP verification
-- **Batch Management**: Organize reconciliation work into batches with full audit trail
+- **Forgot Password Flow**: Self-service password reset via email with reset token
+- **Carry-Forward Reconciliation**: Previously unreconciled items are included in future reconciliation runs
 - **Report Generation**: Export reconciliation reports in Excel (XLSX) and CSV formats
 - **Real-time Dashboard**: Monitor reconciliation status and transaction metrics
 - **Manual Reconciliation**: Handle exceptions with approval workflow
 - **Pluggable Storage**: Support for local file storage and Google Cloud Storage
-- **Background Email Delivery**: All emails (OTP, welcome, notifications) sent via background tasks for instant UI response
+- **Background Email Delivery**: All emails (welcome, notifications) sent via background tasks for instant UI response
 - **Structured Logging**: JSON or text logging with correlation IDs for request tracing
 - **Security Headers**: CSP, HSTS, rate limiting, and OWASP-recommended headers
 
@@ -25,7 +25,7 @@ A full-stack financial reconciliation platform built with FastAPI and React. Aut
 - **Framework**: FastAPI 0.118+
 - **Database**: MySQL 8.0+ with SQLAlchemy ORM
 - **Migrations**: Alembic
-- **Authentication**: JWT (access + refresh tokens) with OTP 2FA
+- **Authentication**: JWT (access + refresh tokens)
 - **Email**: aiosmtplib with Jinja2 HTML templates
 - **Data Processing**: Pandas, OpenPyXL
 - **Rate Limiting**: SlowAPI
@@ -61,6 +61,46 @@ A full-stack financial reconciliation platform built with FastAPI and React. Aut
 └───────────────┘    └───────────────────┘    └───────────────┘
 ```
 
+## Project Structure
+
+```
+.
+├── backend/                    # Backend application
+│   ├── app/                    # FastAPI application code
+│   │   ├── auth/               # Authentication (JWT, password, dependencies)
+│   │   ├── config/             # App settings and gateway configuration
+│   │   ├── controller/         # API route handlers
+│   │   ├── customLogging/      # Structured logging configuration
+│   │   ├── database/           # Database connection and session
+│   │   ├── dataLoading/        # File loading (xlsx, csv)
+│   │   ├── dataProcessing/     # Data transformation and normalization
+│   │   ├── exceptions/         # Custom exceptions and handlers
+│   │   ├── middleware/         # Security headers, audit, request logging
+│   │   ├── pydanticModels/     # Request/response schemas
+│   │   ├── reconciler/         # Core reconciliation engine
+│   │   ├── reports/            # Report generation (Excel/CSV)
+│   │   ├── services/           # Email service
+│   │   ├── sqlModels/          # SQLAlchemy ORM models
+│   │   ├── storage/            # File storage backends (local, GCS)
+│   │   ├── templates/          # Jinja2 email templates
+│   │   ├── upload/             # File upload handling
+│   │   └── main.py             # FastAPI application entry point
+│   ├── alembic/                # Database migrations
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── .env.example            # Environment variable reference
+├── frontend/                   # React + TypeScript frontend
+│   └── src/
+│       ├── api/                # API client modules
+│       ├── components/         # Reusable UI components
+│       ├── features/           # Feature pages
+│       ├── stores/             # Zustand state management
+│       └── types/              # TypeScript type definitions
+├── docs/                       # Documentation
+├── docker-compose.yml
+└── .gitignore
+```
+
 ## Getting Started
 
 ### Prerequisites
@@ -77,13 +117,13 @@ A full-stack financial reconciliation platform built with FastAPI and React. Aut
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd payment-reconciliation
+   cd recon
    ```
 
 2. **Configure environment variables**
    ```bash
-   cp .env.example .env
-   # Edit .env with your configuration (all variables are required)
+   cp backend/.env.example backend/.env
+   # Edit backend/.env with your configuration (all variables are required)
    ```
 
 3. **Start the services**
@@ -118,6 +158,8 @@ A full-stack financial reconciliation platform built with FastAPI and React. Aut
 
 1. **Backend Setup**
    ```bash
+   cd backend
+
    # Create virtual environment
    python -m venv venv
    source venv/bin/activate  # Linux/Mac
@@ -145,28 +187,26 @@ A full-stack financial reconciliation platform built with FastAPI and React. Aut
 
 ### Configuration
 
-All environment variables are **required** and must be set in the `.env` file. The application will fail to start if any are missing.
+All environment variables are **required** and must be set in `backend/.env`. The application will fail to start if any are missing.
 
-Copy `.env.example` to `.env` and configure all values. Key variables:
+Copy `backend/.env.example` to `backend/.env` and configure all values. Key variables:
 
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | MySQL connection string (`mysql+pymysql://user:pass@host:port/db`) |
 | `JWT_SECRET_KEY` | Secret for JWT signing (min 32 chars, generate with `openssl rand -hex 32`) |
-| `SUPER_ADMIN_SECRET` | One-time secret for initial super admin creation (min 16 chars) |
 | `ENVIRONMENT` | `development`, `staging`, or `production` |
 | `STORAGE_BACKEND` | `local` or `gcs` |
-| `SMTP_HOST` / `SMTP_PASSWORD` | Email server credentials for OTP delivery |
+| `SMTP_HOST` / `SMTP_PASSWORD` | Email server credentials |
 | `TZ` | Timezone (`Africa/Nairobi`) |
 
-See `.env.example` for the complete list with documentation.
+See `backend/.env.example` for the complete list with documentation.
 
 ## Authentication
 
-### Login Flow (2-Step OTP)
+### Login Flow
 
-1. **Step 1**: User submits credentials → Server validates and sends a 6-digit OTP to email
-2. **Step 2**: User enters OTP → Server issues JWT access + refresh tokens
+User submits email + password → Server validates credentials → Issues JWT access + refresh tokens.
 
 ### Security Features
 
@@ -175,27 +215,25 @@ See `.env.example` for the complete list with documentation.
 - **Password Policy**: Configurable minimum length, uppercase, lowercase, digit, and special character requirements
 - **Password Expiry**: Passwords expire after 90 days (configurable)
 - **Password History**: Prevents reuse of last 5 passwords (configurable)
-- **Rate Limiting**: Login (5/min), OTP verify (10/min), forgot password (3/min)
-- **OTP Resend Cooldown**: 2-minute cooldown between OTP resend requests
+- **Rate Limiting**: Login (5/min), forgot password (3/min)
 
 ### User Roles
 
 | Role | Description | Capabilities |
 |------|-------------|--------------|
 | `super_admin` | System Administrator | Create/manage user accounts, assign roles |
-| `admin` | Approver/Checker | Approve/reject manual reconciliations, gateway changes, batch deletions |
-| `user` | Inputter/Maker | Create batches, upload files, run reconciliation, initiate actions |
+| `admin` | Approver/Checker | Approve/reject manual reconciliations, gateway changes |
+| `user` | Inputter/Maker | Upload files, run reconciliation, initiate actions |
 
 ## Usage
 
 ### Reconciliation Workflow
 
-1. **Create a Batch**: Start a new reconciliation batch
-2. **Upload Files**: Upload external (bank) and internal (system) transaction files
-3. **Run Reconciliation**: System automatically matches transactions
+1. **Upload Files**: Upload external (bank) and internal (system) transaction files for a gateway
+2. **Preview**: Dry-run reconciliation with carry-forward of previously unreconciled items
+3. **Save**: Confirm and save results — auto-creates a ReconciliationRun
 4. **Review Results**: Handle unmatched transactions manually if needed
 5. **Generate Reports**: Export reconciliation results
-6. **Close Batch**: Finalize the batch when complete
 
 ### File Format
 
@@ -221,19 +259,19 @@ Interactive API documentation is available at (development only):
 
 | Group | Method | Endpoint | Description |
 |-------|--------|----------|-------------|
-| Auth | POST | `/api/v1/auth/login` | Step 1: Verify credentials, send OTP |
-| Auth | POST | `/api/v1/auth/verify-otp` | Step 2: Verify OTP, get tokens |
-| Auth | POST | `/api/v1/auth/forgot-password` | Request password reset OTP |
-| Batch | POST | `/api/v1/batch` | Create new batch |
+| Auth | POST | `/api/v1/auth/login` | Verify credentials, get tokens |
+| Auth | POST | `/api/v1/auth/forgot-password` | Request password reset |
 | Upload | POST | `/api/v1/upload/file` | Upload transaction file |
 | Reconcile | POST | `/api/v1/reconcile` | Run reconciliation |
-| Reports | GET | `/api/v1/reports/download/batch` | Download report |
+| Reports | GET | `/api/v1/reports/download` | Download report |
 | Users | POST | `/api/v1/users` | Create user (super admin only) |
 | Gateways | GET | `/api/v1/gateway-config` | List gateway configurations |
 
 ## Database Migrations
 
 ```bash
+cd backend
+
 # Run pending migrations
 alembic upgrade head
 
@@ -247,51 +285,9 @@ alembic history
 alembic downgrade -1
 ```
 
-## Project Structure
-
-```
-.
-├── app/                        # Backend application
-│   ├── auth/                   # Authentication (JWT, password, dependencies)
-│   ├── config/                 # App settings and gateway configuration
-│   ├── controller/             # API route handlers (11 routers)
-│   ├── customLogging/          # Structured logging configuration
-│   ├── database/               # Database connection and session
-│   ├── dataLoading/            # File loading (xlsx, csv)
-│   ├── dataProcessing/         # Data transformation and normalization
-│   ├── exceptions/             # Custom exceptions and handlers
-│   ├── middleware/              # Security headers, audit, request logging
-│   ├── pydanticModels/         # Request/response schemas
-│   ├── reconciler/             # Core reconciliation engine
-│   ├── reports/                # Report generation (Excel/CSV)
-│   ├── services/               # Email and OTP services
-│   ├── sqlModels/              # SQLAlchemy ORM models
-│   ├── storage/                # File storage backends (local, GCS)
-│   ├── templates/              # Jinja2 email templates
-│   ├── upload/                 # File upload and batch handling
-│   └── main.py                 # FastAPI application entry point
-├── alembic/                    # Database migrations
-├── frontend/                   # React + TypeScript frontend
-│   └── src/
-│       ├── api/                # API client modules
-│       ├── components/         # Reusable UI components
-│       │   ├── auth/           # OTP input, countdown timer
-│       │   ├── layout/         # Header, sidebar, protected routes
-│       │   └── ui/             # Buttons, modals, tables, forms
-│       ├── features/           # Feature pages (11 modules)
-│       ├── hooks/              # Custom React hooks
-│       ├── lib/                # Utilities
-│       ├── stores/             # Zustand state management
-│       └── types/              # TypeScript type definitions
-├── docker-compose.yml
-├── Dockerfile
-├── requirements.txt
-└── .env.example                # Environment variable reference
-```
-
 ## Security
 
-- All environment variables are required from `.env` — no hardcoded defaults
+- All environment variables are required from `backend/.env` — no hardcoded defaults
 - JWT secrets must be strong (32+ characters)
 - API docs (Swagger/ReDoc) are disabled in production
 - Security headers: CSP, X-Frame-Options, X-Content-Type-Options, HSTS (HTTPS)

@@ -114,13 +114,13 @@ desktop.ini
 # Internal Planning Documents (not for public repo)
 # =============================================================================
 PLAN.md
-CLAUDE.md
+/CLAUDE.md
 
 # =============================================================================
 # Alembic
 # =============================================================================
-alembic/__pycache__/
-alembic/versions/__pycache__/
+backend/alembic/__pycache__/
+backend/alembic/versions/__pycache__/
 
 # =============================================================================
 # Frontend (React/Vite)

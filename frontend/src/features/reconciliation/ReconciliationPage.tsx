@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Play,
@@ -13,8 +13,9 @@ import {
   CheckCircle2,
   XCircle,
   Upload,
+  RefreshCw,
 } from 'lucide-react';
-import { batchesApi, reconciliationApi, getErrorMessage } from '@/api';
+import { reconciliationApi, getErrorMessage } from '@/api';
 import type { ReconciliationPreviewResult } from '@/api/reconciliation';
 import {
   Button,
@@ -32,53 +33,37 @@ import { formatNumber } from '@/lib/utils';
 import type { AvailableGateway } from '@/types';
 
 export function ReconciliationPage() {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const [selectedBatch, setSelectedBatch] = useState(searchParams.get('batch_id') || '');
   const [selectedGateway, setSelectedGateway] = useState('');
   const [previewResult, setPreviewResult] = useState<ReconciliationPreviewResult | null>(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [savedRunId, setSavedRunId] = useState<string | null>(null);
 
-  // Fetch pending batches
-  const { data: batchesData, isLoading: batchesLoading } = useQuery({
-    queryKey: ['batches', 'pending'],
-    queryFn: () => batchesApi.list({ status: 'pending' }),
+  // Fetch ready gateways (those with both files uploaded)
+  const { data: gatewaysData, isLoading: gatewaysLoading } = useQuery({
+    queryKey: ['ready-gateways'],
+    queryFn: () => reconciliationApi.getReadyGateways(),
   });
 
-  const batches = batchesData?.batches;
-
-  // Fetch available gateways for selected batch
-  const { data: availableGatewaysData, isLoading: gatewaysLoading } = useQuery({
-    queryKey: ['available-gateways', selectedBatch],
-    queryFn: () => reconciliationApi.getAvailableGateways(selectedBatch),
-    enabled: !!selectedBatch,
-  });
-
-  const availableGateways = availableGatewaysData?.available_gateways || [];
-
-  // Reset state when batch changes
-  useEffect(() => {
-    setSelectedGateway('');
-    setPreviewResult(null);
-    setIsSaved(false);
-  }, [selectedBatch]);
+  const availableGateways = gatewaysData?.gateways || [];
 
   // Reset preview when gateway changes
   useEffect(() => {
     setPreviewResult(null);
     setIsSaved(false);
+    setSavedRunId(null);
   }, [selectedGateway]);
 
   // Preview mutation (dry run)
   const previewMutation = useMutation({
-    mutationFn: (params: { batch_id: string; gateway: string }) =>
-      reconciliationApi.preview(params),
+    mutationFn: (gateway: string) => reconciliationApi.preview(gateway),
     onSuccess: (data) => {
       setPreviewResult(data);
       setIsSaved(false);
+      setSavedRunId(null);
       toast.success('Reconciliation preview complete. Review insights before saving.');
     },
     onError: (err) => toast.error(getErrorMessage(err)),
@@ -86,43 +71,35 @@ export function ReconciliationPage() {
 
   // Save mutation (persist to DB)
   const saveMutation = useMutation({
-    mutationFn: (params: { batch_id: string; gateway: string }) =>
-      reconciliationApi.reconcile(params),
-    onSuccess: () => {
+    mutationFn: (gateway: string) => reconciliationApi.reconcile(gateway),
+    onSuccess: (data) => {
       setIsSaved(true);
-      queryClient.invalidateQueries({ queryKey: ['batches'], refetchType: 'all' });
-      queryClient.invalidateQueries({ queryKey: ['available-gateways'], refetchType: 'all' });
+      setSavedRunId(data.run_id);
+      queryClient.invalidateQueries({ queryKey: ['ready-gateways'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['runs'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['unreconciled'], refetchType: 'all' });
-      queryClient.invalidateQueries({ queryKey: ['reportBatches'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['transactions'], refetchType: 'all' });
-      queryClient.invalidateQueries({ queryKey: ['transactionBatches'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' });
-      queryClient.invalidateQueries({ queryKey: ['dashboardBatches'], refetchType: 'all' });
       toast.success('Reconciliation saved successfully!');
     },
     onError: (err) => toast.error(getErrorMessage(err)),
   });
 
   const handleRunReconciliation = () => {
-    if (!selectedBatch || !selectedGateway) {
-      toast.error('Please select a batch and gateway');
+    if (!selectedGateway) {
+      toast.error('Please select a gateway');
       return;
     }
-    previewMutation.mutate({ batch_id: selectedBatch, gateway: selectedGateway });
+    previewMutation.mutate(selectedGateway);
   };
 
   const handleSaveReconciliation = () => {
-    if (!selectedBatch || !selectedGateway) {
-      toast.error('Please select a batch and gateway');
+    if (!selectedGateway) {
+      toast.error('Please select a gateway');
       return;
     }
-    saveMutation.mutate({ batch_id: selectedBatch, gateway: selectedGateway });
+    saveMutation.mutate(selectedGateway);
   };
-
-  const batchOptions = batches?.map((b) => ({
-    value: b.batch_id,
-    label: b.batch_id,
-  })) || [];
 
   // Build gateway options with status indicators
   const gatewayOptions = availableGateways.map((g: AvailableGateway) => ({
@@ -136,7 +113,7 @@ export function ReconciliationPage() {
     (g: AvailableGateway) => g.gateway === selectedGateway
   );
 
-  if (batchesLoading) return <PageLoading />;
+  if (gatewaysLoading) return <PageLoading />;
 
   const insights = previewResult?.insights;
 
@@ -158,33 +135,32 @@ export function ReconciliationPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {batches?.length === 0 ? (
-              <Alert variant="warning" title="No pending batches">
-                All batches have been reconciled or there are no batches available.
+            {availableGateways.length === 0 ? (
+              <Alert variant="warning" title="No gateways ready">
+                Upload files for a gateway to start reconciliation.
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => navigate('/upload')}
+                >
+                  <Upload className="h-4 w-4 mr-1.5" />
+                  Go to Upload
+                </Button>
               </Alert>
             ) : (
               <>
-                {/* Batch Selection */}
-                <Select
-                  label="Batch"
-                  options={batchOptions}
-                  value={selectedBatch}
-                  onChange={(e) => setSelectedBatch(e.target.value)}
-                  placeholder="Select a pending batch"
-                />
-
                 {/* Gateway Selection */}
                 <Select
                   label="Gateway"
                   options={gatewayOptions}
                   value={selectedGateway}
                   onChange={(e) => setSelectedGateway(e.target.value)}
-                  placeholder={selectedBatch ? (gatewaysLoading ? 'Loading...' : 'Select gateway') : 'Select batch first'}
-                  disabled={!selectedBatch || gatewaysLoading}
+                  placeholder="Select gateway"
                 />
 
                 {/* Gateway File Status */}
-                {selectedBatch && selectedGatewayInfo && (
+                {selectedGatewayInfo && (
                   <div className="p-4 bg-gray-50 rounded-lg space-y-3">
                     <h4 className="font-medium text-sm text-gray-700">Files for {selectedGatewayInfo.display_name}</h4>
                     <div className="space-y-2">
@@ -221,7 +197,7 @@ export function ReconciliationPage() {
                           variant="outline"
                           size="sm"
                           className="mt-2 w-full"
-                          onClick={() => navigate(`/upload?batch_id=${selectedBatch}`)}
+                          onClick={() => navigate('/upload')}
                         >
                           <Upload className="h-4 w-4 mr-1.5" />
                           Go to Upload
@@ -231,28 +207,11 @@ export function ReconciliationPage() {
                   </div>
                 )}
 
-                {/* No gateways with files */}
-                {selectedBatch && !gatewaysLoading && availableGateways.length === 0 && (
-                  <Alert variant="warning" title="No files uploaded">
-                    No files have been uploaded for this batch yet.
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-2"
-                      onClick={() => navigate(`/upload?batch_id=${selectedBatch}`)}
-                    >
-                      <Upload className="h-4 w-4 mr-1.5" />
-                      Go to Upload
-                    </Button>
-                  </Alert>
-                )}
-
                 {/* Action Buttons */}
                 <div className="space-y-2 pt-2">
                   <Button
                     onClick={handleRunReconciliation}
                     disabled={
-                      !selectedBatch ||
                       !selectedGateway ||
                       !selectedGatewayInfo?.ready_for_reconciliation ||
                       previewMutation.isPending
@@ -300,12 +259,14 @@ export function ReconciliationPage() {
                       <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
                       <div className="text-sm text-green-800">
                         <p className="font-medium">Reconciliation Saved</p>
-                        <p className="text-green-700">Results have been persisted to the database.</p>
+                        {savedRunId && (
+                          <p className="text-green-700 font-mono text-xs mt-1">Run: {savedRunId}</p>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
                           className="mt-2"
-                          onClick={() => navigate(`/reports?batch_id=${selectedBatch}&gateway=${selectedGateway}`)}
+                          onClick={() => navigate(`/reports?gateway=${selectedGateway}`)}
                         >
                           View Reports
                         </Button>
@@ -341,19 +302,14 @@ export function ReconciliationPage() {
 
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 gap-3">
-                  {/* External Transactions */}
                   <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
                     <p className="text-xl font-bold text-blue-700">{formatNumber(insights?.total_external || 0)}</p>
                     <p className="text-xs text-blue-600">External Records</p>
                   </div>
-
-                  {/* Internal Transactions */}
                   <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
                     <p className="text-xl font-bold text-purple-700">{formatNumber(insights?.total_internal || 0)}</p>
                     <p className="text-xs text-purple-600">Internal Records</p>
                   </div>
-
-                  {/* Matched */}
                   <div className="p-3 bg-green-50 rounded-lg border border-green-100">
                     <div className="flex items-center gap-1.5">
                       <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -361,8 +317,6 @@ export function ReconciliationPage() {
                     </div>
                     <p className="text-xs text-green-600">Matched</p>
                   </div>
-
-                  {/* Unreconciled External */}
                   <div className="p-3 bg-orange-50 rounded-lg border border-orange-100">
                     <div className="flex items-center gap-1.5">
                       <XCircle className="h-4 w-4 text-orange-600" />
@@ -370,8 +324,6 @@ export function ReconciliationPage() {
                     </div>
                     <p className="text-xs text-orange-600">Unmatched External</p>
                   </div>
-
-                  {/* Unreconciled Internal */}
                   <div className="p-3 bg-red-50 rounded-lg border border-red-100">
                     <div className="flex items-center gap-1.5">
                       <XCircle className="h-4 w-4 text-red-600" />
@@ -379,20 +331,41 @@ export function ReconciliationPage() {
                     </div>
                     <p className="text-xs text-red-600">Unmatched Internal</p>
                   </div>
-
-                  {/* Deposits */}
                   <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-100">
                     <p className="text-xl font-bold text-emerald-700">{formatNumber(insights?.deposits || 0)}</p>
                     <p className="text-xs text-emerald-600">Deposits (Credits)</p>
                   </div>
-
-                  {/* Charges */}
                   <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                     <p className="text-xl font-bold text-gray-700">{formatNumber(insights?.charges || 0)}</p>
                     <p className="text-xs text-gray-600">Bank Charges</p>
                   </div>
 
+                  {/* Carry-Forward Matched */}
+                  {(insights?.carry_forward_matched ?? 0) > 0 && (
+                    <div className="p-3 bg-cyan-50 rounded-lg border border-cyan-100">
+                      <div className="flex items-center gap-1.5">
+                        <RefreshCw className="h-4 w-4 text-cyan-600" />
+                        <p className="text-xl font-bold text-cyan-700">{formatNumber(insights?.carry_forward_matched || 0)}</p>
+                      </div>
+                      <p className="text-xs text-cyan-600">Carry-Forward Matched</p>
+                    </div>
+                  )}
                 </div>
+
+                {/* Carry-forward info banner */}
+                {(insights?.carry_forward_matched ?? 0) > 0 && (
+                  <div className="p-3 bg-cyan-50 border border-cyan-200 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <RefreshCw className="h-4 w-4 text-cyan-600 mt-0.5" />
+                      <div className="text-sm text-cyan-800">
+                        <p className="font-medium">Carry-Forward</p>
+                        <p className="text-cyan-700">
+                          {insights?.carry_forward_matched} previously unreconciled items matched in this run.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Status Badge */}
                 <div className="flex justify-center pt-2">

@@ -97,7 +97,7 @@ class TransactionBase(BaseModel):
     reconciliation_status: Optional[str] = Field(
         None, alias="Reconciliation Status", description="Reconciled/Unreconciled"
     )
-    batch_id: str = Field(..., alias="Batch Id", description="Batch ID for this reconciliation")
+    run_id: Optional[str] = Field(None, alias="Run Id", description="Reconciliation run ID")
 
     class Config:
         populate_by_name = True
@@ -129,7 +129,7 @@ class TransactionCreate(BaseModel):
     debit: Optional[Decimal] = Field(None, alias="Debit")
     credit: Optional[Decimal] = Field(None, alias="Credit")
     reconciliation_status: Optional[str] = Field(None, alias="Reconciliation Status")
-    batch_id: str = Field(..., alias="Batch Id")
+    run_id: Optional[str] = Field(None, alias="Run Id")
     reconciliation_note: Optional[str] = Field(None, alias="Reconciliation Note")
     reconciliation_key: Optional[str] = Field(None, alias="Reconciliation Key", description="Generated match key")
     source_file: Optional[str] = Field(None, alias="Source File", description="Source filename")
@@ -156,7 +156,7 @@ class TransactionResponse(BaseModel):
     reconciliation_note: Optional[str] = None
     reconciliation_key: Optional[str] = None
     source_file: Optional[str] = None
-    batch_id: str
+    run_id: Optional[str] = None
 
     # Manual reconciliation fields
     is_manually_reconciled: Optional[str] = None
@@ -178,8 +178,8 @@ class TransactionResponse(BaseModel):
 
 
 class ReconciliationSummary(BaseModel):
-    """Summary of reconciliation results (legacy format for backwards compatibility)."""
-    batch_id: str
+    """Summary of reconciliation results."""
+    run_id: str
     external_gateway: str
     internal_gateway: str
     total_external_debits: int
@@ -189,12 +189,13 @@ class ReconciliationSummary(BaseModel):
     unmatched_internal: int
     total_credits: int
     total_charges: int
+    carry_forward_matched: int = 0
 
 
 class ReconciliationResult(BaseModel):
-    """New reconciliation result format."""
+    """Reconciliation result format."""
     message: str
-    batch_id: str
+    run_id: str
     gateway: str
     summary: dict
     saved: dict

@@ -24,7 +24,7 @@ def transaction_to_dict(txn: Transaction) -> dict:
     - date: Transaction date
     - transaction_id: Transaction reference
     - reconciliation_key: Composite key for matching
-    - batch_id: Reconciliation batch identifier
+    - run_id: Reconciliation run identifier
     - gateway: Gateway name
     - amount: Debit or credit amount (whichever is non-zero)
     - reconciliation_status: reconciled/unreconciled
@@ -42,7 +42,7 @@ def transaction_to_dict(txn: Transaction) -> dict:
         "date": txn.date.isoformat() if txn.date else None,
         "transaction_id": txn.transaction_id,
         "reconciliation_key": txn.reconciliation_key,
-        "batch_id": txn.batch_id,
+        "run_id": txn.run_id,
         "gateway": txn.gateway,
         "amount": amount,
         "reconciliation_status": txn.reconciliation_status,
@@ -56,7 +56,9 @@ def list_transactions(
     page_size: int = Query(25, ge=1, le=100, description="Items per page"),
     search: Optional[str] = Query(None, description="Search by transaction ID"),
     gateway: Optional[str] = Query(None, description="Filter by gateway"),
-    batch_id: Optional[str] = Query(None, description="Filter by batch ID"),
+    run_id: Optional[str] = Query(None, description="Filter by run ID"),
+    date_from: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)"),
     reconciliation_status: Optional[str] = Query(None, description="Filter by status"),
     transaction_type: Optional[str] = Query(None, description="Filter by type"),
     db: Session = Depends(get_database),
@@ -68,7 +70,7 @@ def list_transactions(
     Supports:
     - Pagination (page, page_size)
     - Search by transaction ID (partial match)
-    - Filter by gateway, batch_id, reconciliation_status, transaction_type
+    - Filter by gateway, run_id, date range, reconciliation_status, transaction_type
     """
     # Build query conditions
     conditions = []
@@ -88,8 +90,22 @@ def list_transactions(
             )
         )
 
-    if batch_id:
-        conditions.append(Transaction.batch_id == batch_id)
+    if run_id:
+        conditions.append(Transaction.run_id == run_id)
+
+    if date_from:
+        from datetime import date
+        try:
+            conditions.append(Transaction.date >= date.fromisoformat(date_from))
+        except ValueError:
+            pass
+
+    if date_to:
+        from datetime import date
+        try:
+            conditions.append(Transaction.date <= date.fromisoformat(date_to))
+        except ValueError:
+            pass
 
     if reconciliation_status:
         conditions.append(Transaction.reconciliation_status == reconciliation_status.lower())
@@ -142,20 +158,20 @@ def get_filter_options(
     """
     Get available filter options for transactions.
 
-    Returns unique values for gateways, batch IDs, statuses, and types.
+    Returns unique values for gateways, run IDs, statuses, and types.
     """
     # Get unique gateways
     gateways_query = select(Transaction.gateway).distinct()
     gateways = [row[0] for row in db.execute(gateways_query).all() if row[0]]
 
-    # Get unique batch IDs (limit to recent 50)
-    batch_ids_query = (
-        select(Transaction.batch_id)
+    # Get unique run IDs (limit to recent 50)
+    run_ids_query = (
+        select(Transaction.run_id)
         .distinct()
-        .order_by(desc(Transaction.batch_id))
+        .order_by(desc(Transaction.run_id))
         .limit(50)
     )
-    batch_ids = [row[0] for row in db.execute(batch_ids_query).all() if row[0]]
+    run_ids = [row[0] for row in db.execute(run_ids_query).all() if row[0]]
 
     # Get unique reconciliation statuses
     statuses_query = select(Transaction.reconciliation_status).distinct()
@@ -167,7 +183,7 @@ def get_filter_options(
 
     return {
         "gateways": sorted(gateways),
-        "batch_ids": batch_ids,
+        "run_ids": run_ids,
         "reconciliation_statuses": sorted(statuses),
         "transaction_types": sorted(types),
     }

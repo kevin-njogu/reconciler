@@ -25,10 +25,9 @@ from app.database.mysql_configs import Base
 
 # Import all model modules to ensure they're registered with Base.metadata
 from app.sqlModels import authEntities  # noqa: F401
-from app.sqlModels import batchEntities  # noqa: F401
+from app.sqlModels import runEntities  # noqa: F401
 from app.sqlModels import transactionEntities  # noqa: F401
 from app.sqlModels import gatewayEntities  # noqa: F401
-from app.sqlModels import settingsEntities  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

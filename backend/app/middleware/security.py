@@ -45,10 +45,7 @@ limiter = Limiter(
 # Rate limit configurations for specific endpoints
 RATE_LIMITS = {
     "login": "5/minute",           # Strict limit on login attempts
-    "verify_otp": "10/minute",     # OTP verification attempts
-    "resend_otp": "3/minute",      # OTP resend requests
     "forgot_password": "3/minute", # Forgot password requests
-    "verify_reset_otp": "5/minute",  # Reset OTP verification
     "reset_password": "3/minute",  # Password reset attempts
     "refresh": "10/minute",        # Moderate limit on token refresh
     "upload": "30/minute",         # Reasonable limit for file uploads

@@ -15,7 +15,7 @@ export interface UnreconciledTransaction {
   remarks: string | null;
   reconciliation_status: string | null;
   reconciliation_key: string | null;
-  batch_id: string;
+  run_id: string | null;
   is_manually_reconciled: string | null;
   manual_recon_note: string | null;
   manual_recon_by: number | null;
@@ -29,7 +29,6 @@ export interface UnreconciledTransaction {
 }
 
 export interface UnreconciledResponse {
-  batch_id: string;
   gateway_filter: string | null;
   available_gateways: string[];
   total_count: number;
@@ -37,7 +36,6 @@ export interface UnreconciledResponse {
 }
 
 export interface PendingAuthorizationGroup {
-  batch_id: string;
   gateway: string;
   transactions: UnreconciledTransaction[];
 }
@@ -73,13 +71,12 @@ export interface BulkManualReconcileResponse {
 // API Methods
 export const operationsApi = {
   /**
-   * Get unreconciled transactions for a batch
+   * Get unreconciled transactions, optionally filtered by gateway
    */
   getUnreconciled: async (
-    batchId: string,
     gateway?: string
   ): Promise<UnreconciledResponse> => {
-    const params: Record<string, string> = { batch_id: batchId };
+    const params: Record<string, string> = {};
     if (gateway) {
       params.gateway = gateway;
     }
@@ -93,13 +90,9 @@ export const operationsApi = {
    * Get transactions pending authorization (admin only)
    */
   getPendingAuthorization: async (
-    batchId?: string,
     gateway?: string
   ): Promise<PendingAuthorizationResponse> => {
     const params: Record<string, string> = {};
-    if (batchId) {
-      params.batch_id = batchId;
-    }
     if (gateway) {
       params.gateway = gateway;
     }
@@ -115,11 +108,12 @@ export const operationsApi = {
    */
   manualReconcile: async (
     transactionId: number,
+    transactionType: string,
     note: string
   ): Promise<ManualReconcileResponse> => {
     const response = await apiClient.post<ManualReconcileResponse>(
       `/operations/manual-reconcile/${transactionId}`,
-      { note }
+      { transaction_type: transactionType, note }
     );
     return response.data;
   },
@@ -129,11 +123,12 @@ export const operationsApi = {
    */
   manualReconcileBulk: async (
     transactionIds: number[],
+    transactionType: string,
     note: string
   ): Promise<BulkManualReconcileResponse> => {
     const response = await apiClient.post<BulkManualReconcileResponse>(
       '/operations/manual-reconcile-bulk',
-      { transaction_ids: transactionIds, note }
+      { transaction_ids: transactionIds, transaction_type: transactionType, note }
     );
     return response.data;
   },

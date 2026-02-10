@@ -10,14 +10,12 @@ import { PageLoading, ErrorBoundary } from '@/components/ui';
 import { LoginPage, ChangePasswordPage, ForgotPasswordPage } from '@/features/auth';
 import { DashboardPage } from '@/features/dashboard';
 import { UsersPage } from '@/features/users';
-import { BatchesPage, BatchDetailPage } from '@/features/batches';
-import { UploadPage } from '@/features/upload';
-import { ReconciliationPage } from '@/features/reconciliation';
+import { RunsPage, RunDetailPage } from '@/features/runs';
+import { ReconcilePage } from '@/features/reconcile';
 import { ReportsPage } from '@/features/reports';
 import { GatewaysPage, GatewayApprovalPage } from '@/features/gateways';
 import { OperationsPage, AuthorizationPage } from '@/features/operations';
 import { TransactionsPage } from '@/features/transactions';
-import { SettingsPage } from '@/features/settings';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -67,10 +65,19 @@ function AppRoutes() {
       >
         <Route path="/" element={<DashboardPage />} />
         <Route path="/change-password" element={<ChangePasswordPage />} />
-        <Route path="/batches" element={<BatchesPage />} />
-        <Route path="/batches/:batchId" element={<BatchDetailPage />} />
-        <Route path="/upload" element={<UploadPage />} />
-        <Route path="/reconciliation" element={<ReconciliationPage />} />
+        <Route path="/runs" element={<RunsPage />} />
+        <Route path="/runs/:runId" element={<RunDetailPage />} />
+        <Route
+          path="/reconcile"
+          element={
+            <ProtectedRoute requireUserRole>
+              <ReconcilePage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Redirects from old routes */}
+        <Route path="/upload" element={<Navigate to="/reconcile" replace />} />
+        <Route path="/reconciliation" element={<Navigate to="/reconcile" replace />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
         {/* User role routes - manual reconciliation operations */}
@@ -110,8 +117,6 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-        <Route path="/settings" element={<SettingsPage />} />
-
         {/* Super Admin routes */}
         <Route
           path="/users"

@@ -1,5 +1,5 @@
 from enum import Enum as PyEnum
-from sqlalchemy import Column, Integer, String, DateTime, Numeric, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, DateTime, Numeric, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -119,7 +119,7 @@ class Transaction(Base):
 
     # Reconciliation columns
     reconciliation_status = Column(String(50), nullable=True, index=True)
-    batch_id = Column(String(100), ForeignKey("batches.batch_id"), nullable=False, index=True)
+    run_id = Column(String(100), ForeignKey("reconciliation_runs.run_id"), nullable=True, index=True)
     reconciliation_note = Column(String(1000), nullable=True)  # "System Reconciled" or manual note
     reconciliation_key = Column(String(255), nullable=True, index=True)  # Generated match key for auditing
     source_file = Column(String(255), nullable=True)  # Source file name for tracking
@@ -140,7 +140,7 @@ class Transaction(Base):
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     # Relationships
-    batch = relationship("Batch", backref="transactions")
+    run = relationship("ReconciliationRun", backref="transactions")
     manual_reconciled_user = relationship(
         "User", foreign_keys=[manual_recon_by], backref="manual_reconciliations"
     )
@@ -148,15 +148,18 @@ class Transaction(Base):
         "User", foreign_keys=[authorized_by], backref="authorized_transactions"
     )
 
-    # Composite indexes for common queries
+    # Composite indexes and constraints
     __table_args__ = (
-        Index('ix_gateway_batch', 'gateway', 'batch_id'),
-        Index('ix_gateway_type_batch', 'gateway', 'transaction_type', 'batch_id'),
-        Index('ix_recon_status_batch', 'reconciliation_status', 'batch_id'),
-        Index('ix_auth_status_batch', 'authorization_status', 'batch_id'),
-        Index('ix_recon_key_batch', 'reconciliation_key', 'batch_id'),
-        Index('ix_recon_category_batch', 'reconciliation_category', 'batch_id'),
-        Index('ix_gateway_type_category', 'gateway_type', 'reconciliation_category', 'batch_id'),
+        UniqueConstraint('reconciliation_key', 'gateway', name='uq_recon_key_gateway'),
+        Index('ix_gateway_run', 'gateway', 'run_id'),
+        Index('ix_gateway_type_run', 'gateway', 'transaction_type', 'run_id'),
+        Index('ix_recon_status_run', 'reconciliation_status', 'run_id'),
+        Index('ix_auth_status_run', 'authorization_status', 'run_id'),
+        Index('ix_recon_key_run', 'reconciliation_key', 'run_id'),
+        Index('ix_recon_category_run', 'reconciliation_category', 'run_id'),
+        Index('ix_gateway_type_category', 'gateway_type', 'reconciliation_category', 'run_id'),
+        Index('ix_txn_gateway_recon_status', 'gateway', 'reconciliation_status'),
+        Index('ix_txn_date', 'date'),
     )
 
     def __repr__(self):

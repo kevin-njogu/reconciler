@@ -352,7 +352,6 @@ function AuthorizationPanel({
 
 interface SideBySideAuthorizationViewProps {
   groups: Array<{
-    batch_id: string;
     gateway: string;
     transactions: UnreconciledTransaction[];
   }>;

@@ -16,8 +16,7 @@ from app.database.mysql_configs import get_database
 from app.auth.security import hash_password, generate_secure_password
 from app.auth.config import auth_settings
 from app.auth.dependencies import require_admin, require_super_admin, get_current_user
-from app.sqlModels.authEntities import User, RefreshToken, LoginSession, UserRole, UserStatus, AuditLog, OTPPurpose
-from app.services.otp_service import OTPService
+from app.sqlModels.authEntities import User, RefreshToken, LoginSession, UserRole, UserStatus, AuditLog
 from app.services.email_service import EmailService
 from app.pydanticModels.authModels import (
     SuperAdminCreateRequest,
@@ -66,18 +65,8 @@ async def create_super_admin(
     """
     Create the first super admin user.
 
-    This endpoint only works if no super admin exists and the correct
-    secret key is provided.
+    This endpoint only works if no super admin exists yet.
     """
-    # Verify secret key
-    if create_request.secret_key != auth_settings.super_admin_secret:
-        log_audit(
-            db, "super_admin_creation_failed", None, "user", None,
-            {"reason": "invalid_secret"}, request
-        )
-        db.commit()
-        raise HTTPException(status_code=400, detail="Invalid secret key")
-
     # Check if super admin already exists
     stmt = select(User).where(User.role == UserRole.SUPER_ADMIN.value)
     existing = db.execute(stmt).scalar_one_or_none()
@@ -134,8 +123,8 @@ async def create_user(
     """
     Create a new user (super admin only).
 
-    Password is auto-generated and sent via welcome email along with
-    a verification OTP code. The user must change their password on first login.
+    Password is auto-generated and sent via welcome email.
+    The user must change their password on first login.
     """
     # Check email uniqueness
     stmt = select(User).where(
@@ -165,16 +154,10 @@ async def create_user(
     db.add(user)
     db.flush()
 
-    # Generate welcome OTP (5-minute lifetime)
-    ip = request.client.host if request.client else None
-    ua = request.headers.get("user-agent")
-    plain_otp, _ = OTPService.create_otp(db, user.id, OTPPurpose.WELCOME.value, ip, ua)
-
     # Send welcome email in background
-    lifetime = OTPService.get_lifetime_seconds(OTPPurpose.WELCOME.value)
     background_tasks.add_task(
         EmailService.send_welcome_email,
-        user.email, user.email, initial_password, plain_otp, user.full_name, lifetime
+        user.email, user.email, initial_password, user.full_name
     )
 
     log_audit(
@@ -505,16 +488,10 @@ async def reset_user_password(
         LoginSession.is_active == True,
     ).update({"is_active": False, "logged_out_at": datetime.now(timezone.utc)})
 
-    # Generate welcome OTP for first login with new password
-    ip = request.client.host if request.client else None
-    ua = request.headers.get("user-agent")
-    plain_otp, _ = OTPService.create_otp(db, user.id, OTPPurpose.WELCOME.value, ip, ua)
-
     # Send email with new credentials in background
-    lifetime = OTPService.get_lifetime_seconds(OTPPurpose.WELCOME.value)
     background_tasks.add_task(
         EmailService.send_welcome_email,
-        user.email, user.email, new_password, plain_otp, user.full_name, lifetime
+        user.email, user.email, new_password, user.full_name
     )
 
     log_audit(

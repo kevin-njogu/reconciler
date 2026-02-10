@@ -46,11 +46,11 @@ class Gateway(Base):
                          comment="Human-readable gateway name (e.g., 'Equity Bank')")
     description = Column(Text, nullable=True, comment="Optional gateway description")
 
-    # Location and currency (shared between external and internal)
-    country_id = Column(Integer, ForeignKey("countries.id", ondelete="SET NULL"), nullable=True,
-                       comment="FK to countries table")
-    currency_id = Column(Integer, ForeignKey("currencies.id", ondelete="SET NULL"), nullable=True,
-                        comment="FK to currencies table")
+    # Country and currency (direct text fields)
+    country = Column(String(100), nullable=True,
+                    comment="Country name (e.g., Kenya, Uganda)")
+    currency_code = Column(String(3), nullable=True,
+                          comment="ISO 4217 currency code (e.g., KES, USD)")
 
     # Status
     is_active = Column(Boolean, default=True, nullable=False)
@@ -61,8 +61,6 @@ class Gateway(Base):
     created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
-    country = relationship("Country", foreign_keys=[country_id])
-    currency = relationship("Currency", foreign_keys=[currency_id])
     created_by = relationship("User", foreign_keys=[created_by_id])
     file_configs = relationship("GatewayFileConfig", back_populates="gateway", cascade="all, delete-orphan")
 
@@ -92,17 +90,8 @@ class Gateway(Base):
             "id": self.id,
             "display_name": self.display_name,
             "description": self.description,
-            "country": {
-                "id": self.country.id if self.country else None,
-                "code": self.country.code if self.country else None,
-                "name": self.country.name if self.country else None,
-            } if self.country else None,
-            "currency": {
-                "id": self.currency.id if self.currency else None,
-                "code": self.currency.code if self.currency else None,
-                "name": self.currency.name if self.currency else None,
-                "symbol": self.currency.symbol if self.currency else None,
-            } if self.currency else None,
+            "country": self.country,
+            "currency_code": self.currency_code,
             "is_active": self.is_active,
             "external_config": external_config.to_dict() if external_config else None,
             "internal_config": internal_config.to_dict() if internal_config else None,
@@ -132,8 +121,6 @@ class GatewayFileConfig(Base):
                  comment="Unique config name used in file paths")
 
     # File matching configuration
-    filename_prefix = Column(String(100), nullable=True,
-                            comment="Prefix to match uploaded files (e.g., 'Account_statement')")
     expected_filetypes = Column(JSON, nullable=True, default=lambda: ["xlsx", "xls", "csv"],
                                comment="List of expected file types")
 
@@ -145,14 +132,13 @@ class GatewayFileConfig(Base):
     end_of_data_signal = Column(String(255), nullable=True,
                                comment="Optional text that signals end of transaction data")
 
-    # Date format for parsing
-    date_format_id = Column(Integer, ForeignKey("date_formats.id", ondelete="SET NULL"), nullable=True,
-                           comment="FK to date_formats table")
+    # Date format for parsing (Python strftime string, e.g., "%d/%m/%Y")
+    date_format = Column(String(50), nullable=True,
+                        comment="Python strftime format string for date parsing")
 
     # Charge keywords (external only)
     charge_keywords = Column(JSON, nullable=True,
                             comment="Keywords to identify charges (external gateways only)")
-
 
     # Column mapping for raw file transformation
     # Maps template columns to possible source column names
@@ -169,7 +155,6 @@ class GatewayFileConfig(Base):
 
     # Relationships
     gateway = relationship("Gateway", back_populates="file_configs")
-    date_format = relationship("DateFormat", foreign_keys=[date_format_id])
 
     # Constraints
     __table_args__ = (
@@ -188,55 +173,12 @@ class GatewayFileConfig(Base):
             "gateway_id": self.gateway_id,
             "config_type": self.config_type,
             "name": self.name,
-            "filename_prefix": self.filename_prefix,
             "expected_filetypes": self.expected_filetypes or ["xlsx", "xls", "csv"],
             "header_row_config": self.header_row_config or {"xlsx": 0, "xls": 0, "csv": 0},
             "end_of_data_signal": self.end_of_data_signal,
-            "date_format": {
-                "id": self.date_format.id,
-                "format_string": self.date_format.format_string,
-                "example": self.date_format.example,
-            } if self.date_format else None,
-            "charge_keywords": self.charge_keywords or [],
-            "column_mapping": self.column_mapping,
-            "is_active": self.is_active,
-        }
-
-
-# Keep old GatewayConfig for backward compatibility during migration
-class GatewayConfig(Base):
-    """
-    Legacy gateway configuration model.
-
-    DEPRECATED: Use Gateway and GatewayFileConfig instead.
-    Kept for backward compatibility during migration.
-    """
-    __tablename__ = "gateway_configs"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(50), unique=True, nullable=False, index=True)
-    gateway_type = Column(String(20), nullable=False)  # 'external' or 'internal'
-    display_name = Column(String(100), unique=True, nullable=False)
-    country = Column(String(2), nullable=False)  # ISO 3166-1 alpha-2: KE, UG, TZ
-    currency = Column(String(3), nullable=False)  # ISO 4217: KES, USD, UGX
-    date_format = Column(String(20), nullable=False, default='YYYY-MM-DD')
-    charge_keywords = Column(JSON, nullable=True)  # List of keywords for external gateways
-    is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
-
-    def __repr__(self):
-        return f"<GatewayConfig(name='{self.name}', type='{self.gateway_type}')>"
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary format matching the config structure."""
-        return {
-            "type": self.gateway_type,
-            "display_name": self.display_name,
-            "country": self.country,
-            "currency": self.currency,
             "date_format": self.date_format,
             "charge_keywords": self.charge_keywords or [],
+            "column_mapping": self.column_mapping,
             "is_active": self.is_active,
         }
 
@@ -256,11 +198,7 @@ class GatewayChangeRequest(Base):
     request_type = Column(String(20), nullable=False)  # create, update, delete, activate
     status = Column(String(20), nullable=False, default=ChangeRequestStatus.PENDING.value)
 
-    # Gateway identification (legacy - points to gateway_configs)
-    gateway_id = Column(Integer, ForeignKey("gateway_configs.id"), nullable=True)
-    gateway_name = Column(String(50), nullable=False)
-
-    # Unified gateway identification (new - points to gateways)
+    # Gateway identification
     unified_gateway_id = Column(Integer, ForeignKey("gateways.id", ondelete="SET NULL"), nullable=True)
     gateway_display_name = Column(String(100), nullable=True)  # Store display name for reference
 
@@ -277,7 +215,6 @@ class GatewayChangeRequest(Base):
     rejection_reason = Column(Text, nullable=True)
 
     # Relationships
-    legacy_gateway = relationship("GatewayConfig", foreign_keys=[gateway_id])
     unified_gateway = relationship("Gateway", foreign_keys=[unified_gateway_id])
     requested_by = relationship("User", foreign_keys=[requested_by_id])
     reviewed_by = relationship("User", foreign_keys=[reviewed_by_id])

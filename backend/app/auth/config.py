@@ -1,7 +1,7 @@
 """
 Authentication configuration settings.
 
-Loads JWT, password policy, SMTP, OTP, and security settings from environment variables.
+Loads JWT, password policy, SMTP, and security settings from environment variables.
 All values are required and must be set in the .env file.
 """
 import logging
@@ -21,9 +21,6 @@ class AuthSettings(BaseSettings):
     access_token_expire_minutes: int
     refresh_token_expire_hours: int
 
-    # Super Admin Creation Secret
-    super_admin_secret: str
-
     # SMTP Email Configuration
     smtp_host: str
     smtp_port: int
@@ -35,13 +32,6 @@ class AuthSettings(BaseSettings):
 
     # Email Domain Restriction
     allowed_email_domain: str
-
-    # OTP Configuration
-    otp_login_lifetime_seconds: int
-    otp_welcome_lifetime_seconds: int
-    otp_forgot_password_lifetime_seconds: int
-    otp_max_attempts: int
-    otp_resend_cooldown_seconds: int
 
     # Account Security
     max_failed_login_attempts: int
@@ -74,9 +64,6 @@ def validate_auth_config():
 
     if len(auth_settings.jwt_secret_key) < 32:
         errors.append("JWT_SECRET_KEY must be at least 32 characters")
-
-    if len(auth_settings.super_admin_secret) < 16:
-        errors.append("SUPER_ADMIN_SECRET must be at least 16 characters")
 
     if errors:
         for error in errors:

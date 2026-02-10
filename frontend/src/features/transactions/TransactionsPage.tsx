@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Search, ChevronLeft, ChevronRight, FileSpreadsheet } from 'lucide-react';
-import { transactionsApi, reportsApi, getErrorMessage } from '@/api';
+import { transactionsApi, getErrorMessage } from '@/api';
 import type { TransactionFilters } from '@/api/transactions';
 import {
   Button,
@@ -26,43 +26,32 @@ import { formatDate, formatCurrency, cn } from '@/lib/utils';
 
 export function TransactionsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const prevBatchRef = useRef<string | null>(null);
 
   // State
-  const [selectedBatch, setSelectedBatch] = useState(searchParams.get('batch_id') || '');
   const [selectedGateway, setSelectedGateway] = useState(searchParams.get('gateway') || '');
+  const [dateFrom, setDateFrom] = useState(searchParams.get('date_from') || '');
+  const [dateTo, setDateTo] = useState(searchParams.get('date_to') || '');
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '');
-  const [batchSearch, setBatchSearch] = useState('');
-  const [batchDropdownOpen, setBatchDropdownOpen] = useState(false);
   const [page, setPage] = useState(parseInt(searchParams.get('page') || '1'));
   const [pageSize, setPageSize] = useState(parseInt(searchParams.get('page_size') || '25'));
 
-  // Fetch batches (latest 5 or search results) - instant refresh on mount
-  const { data: batchesData, isLoading: batchesLoading } = useQuery({
-    queryKey: ['transactionBatches', batchSearch],
-    queryFn: () => reportsApi.getBatches(batchSearch || undefined, batchSearch ? 50 : 5),
-    staleTime: 0,
-    refetchOnMount: 'always',
+  // Fetch filter options (gateways, run_ids, statuses, types)
+  const { data: filterOptions } = useQuery({
+    queryKey: ['transaction-filters'],
+    queryFn: () => transactionsApi.getFilterOptions(),
+    staleTime: 30000,
   });
 
-  // Fetch available gateways when batch is selected - instant refresh
-  const { data: gatewaysData, isLoading: gatewaysLoading } = useQuery({
-    queryKey: ['availableGateways', selectedBatch],
-    queryFn: () => reportsApi.getAvailableGateways(selectedBatch),
-    enabled: !!selectedBatch,
-    staleTime: 0,
-    refetchOnMount: 'always',
-  });
+  // Build unique base gateways from filter options
+  const getBaseGateway = (gateway: string) => {
+    return gateway.replace(/_internal$/, '').replace(/_external$/, '');
+  };
 
-  const batches = batchesData?.batches || [];
-  const availableGateways = gatewaysData?.gateways || [];
-
-  // Auto-select the latest batch when batches load and no batch is selected
-  useEffect(() => {
-    if (!selectedBatch && batches.length > 0) {
-      setSelectedBatch(batches[0].batch_id);
-    }
-  }, [batches, selectedBatch]);
+  const uniqueBaseGateways = useMemo(() => {
+    if (!filterOptions?.gateways) return [];
+    const gateways = filterOptions.gateways.map((g) => getBaseGateway(g));
+    return Array.from(new Set(gateways));
+  }, [filterOptions?.gateways]);
 
   // Build filters for transactions API - excluding charges
   const filters: TransactionFilters = useMemo(() => {
@@ -70,13 +59,14 @@ export function TransactionsPage() {
       page,
       page_size: pageSize,
     };
-    if (selectedBatch) f.batch_id = selectedBatch;
     if (selectedGateway) f.gateway = selectedGateway;
+    if (dateFrom) f.date_from = dateFrom;
+    if (dateTo) f.date_to = dateTo;
     if (searchInput) f.search = searchInput;
     return f;
-  }, [page, pageSize, selectedBatch, selectedGateway, searchInput]);
+  }, [page, pageSize, selectedGateway, dateFrom, dateTo, searchInput]);
 
-  // Fetch transactions - instant refresh on mount and filter changes
+  // Fetch transactions
   const {
     data: transactionsData,
     isLoading: transactionsLoading,
@@ -84,7 +74,6 @@ export function TransactionsPage() {
   } = useQuery({
     queryKey: ['transactions', filters],
     queryFn: () => transactionsApi.list(filters),
-    enabled: !!selectedBatch && !!selectedGateway,
     staleTime: 0,
     refetchOnMount: 'always',
   });
@@ -97,72 +86,45 @@ export function TransactionsPage() {
     );
   }, [transactionsData?.transactions]);
 
-  // Get unique base gateways
-  const getBaseGateway = (gateway: string) => {
-    return gateway.replace(/_internal$/, '').replace(/_external$/, '');
+  // Update URL params when filters change
+  const updateUrlParams = (overrides: Record<string, string>) => {
+    const params: Record<string, string> = {};
+    const merged = {
+      gateway: selectedGateway,
+      date_from: dateFrom,
+      date_to: dateTo,
+      search: searchInput,
+      page: String(page),
+      page_size: String(pageSize),
+      ...overrides,
+    };
+    if (merged.gateway) params.gateway = merged.gateway;
+    if (merged.date_from) params.date_from = merged.date_from;
+    if (merged.date_to) params.date_to = merged.date_to;
+    if (merged.search) params.search = merged.search;
+    if (merged.page && merged.page !== '1') params.page = merged.page;
+    if (merged.page_size && merged.page_size !== '25') params.page_size = merged.page_size;
+    setSearchParams(params);
   };
 
-  const uniqueBaseGateways = useMemo(() => {
-    const gateways = availableGateways.map((g) => getBaseGateway(g.gateway));
-    return Array.from(new Set(gateways));
-  }, [availableGateways]);
-
-  // Auto-select first gateway when gateways load, or reset when batch changes
-  useEffect(() => {
-    if (!selectedBatch) return;
-
-    // If batch changed (user picked a different one), reset gateway
-    if (prevBatchRef.current !== null && prevBatchRef.current !== selectedBatch) {
-      setSelectedGateway('');
-      setPage(1);
-    }
-    prevBatchRef.current = selectedBatch;
-
-    // Auto-select the first gateway if none selected and gateways are available
-    if (!selectedGateway && uniqueBaseGateways.length > 0) {
-      setSelectedGateway(uniqueBaseGateways[0]);
-    }
-  }, [selectedBatch, uniqueBaseGateways, selectedGateway]);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('.batch-dropdown')) {
-        setBatchDropdownOpen(false);
-      }
-    };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
-
-  // Update URL params
-  useEffect(() => {
-    const params: Record<string, string> = {};
-    if (selectedBatch) params.batch_id = selectedBatch;
-    if (selectedGateway) params.gateway = selectedGateway;
-    if (searchInput) params.search = searchInput;
-    if (page > 1) params.page = String(page);
-    if (pageSize !== 25) params.page_size = String(pageSize);
-    setSearchParams(params);
-  }, [selectedBatch, selectedGateway, searchInput, page, pageSize, setSearchParams]);
-
-  const handleBatchSelect = (batchId: string) => {
-    setSelectedBatch(batchId);
-    setSelectedGateway('');
+  const handleGatewayChange = (value: string) => {
+    setSelectedGateway(value);
     setPage(1);
-    setBatchDropdownOpen(false);
-    setBatchSearch('');
+    updateUrlParams({ gateway: value, page: '1' });
   };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    setPage(1); // Reset to page 1 on new search
+    setPage(1);
+    updateUrlParams({ page: '1' });
   };
 
   // Pagination helpers
   const pagination = transactionsData?.pagination;
-  const goToPage = (newPage: number) => setPage(newPage);
+  const goToPage = (newPage: number) => {
+    setPage(newPage);
+    updateUrlParams({ page: String(newPage) });
+  };
 
   const pageSizeOptions = [
     { value: '10', label: '10 per page' },
@@ -197,134 +159,64 @@ export function TransactionsPage() {
     }
   };
 
-  if (batchesLoading) return <PageLoading />;
-
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
         <p className="text-gray-500 mt-1">
-          Browse and search all transactions across gateways and batches
+          Browse and search all transactions across gateways
         </p>
       </div>
 
-      {/* Top Controls: Batch & Gateway on left, Search on right */}
-      <div className="flex items-end justify-between gap-4">
-        {/* Left: Batch and Gateway selectors */}
-        <div className="flex items-end gap-4">
-          {/* Batch Selector with Search */}
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">Batch</label>
-            <div className="relative batch-dropdown">
-              <button
-                type="button"
-                onClick={() => setBatchDropdownOpen(!batchDropdownOpen)}
-                className={cn(
-                  'w-64 px-3 py-2 text-left border rounded-lg bg-white',
-                  'focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400',
-                  'flex items-center justify-between',
-                  batchDropdownOpen && 'ring-2 ring-primary-400 border-primary-400'
-                )}
-              >
-                <span className={selectedBatch ? 'text-gray-900 font-mono text-sm' : 'text-gray-500'}>
-                  {selectedBatch || 'Select a batch...'}
-                </span>
-                <svg
-                  className={cn(
-                    'h-4 w-4 text-gray-400 transition-transform',
-                    batchDropdownOpen && 'rotate-180'
-                  )}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {batchDropdownOpen && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg">
-                  {/* Search Input */}
-                  <div className="p-2 border-b">
-                    <input
-                      type="text"
-                      placeholder="Search batch ID..."
-                      value={batchSearch}
-                      onChange={(e) => setBatchSearch(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-400"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </div>
-
-                  {/* Batch List */}
-                  <div className="max-h-48 overflow-y-auto">
-                    {batches.length === 0 ? (
-                      <div className="px-4 py-3 text-sm text-gray-500 text-center">
-                        No batches found
-                      </div>
-                    ) : (
-                      batches.map((batch) => (
-                        <button
-                          key={batch.batch_id}
-                          type="button"
-                          onClick={() => handleBatchSelect(batch.batch_id)}
-                          className={cn(
-                            'w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between',
-                            selectedBatch === batch.batch_id && 'bg-primary-50 text-primary-700'
-                          )}
-                        >
-                          <span className="font-mono">{batch.batch_id}</span>
-                          <Badge
-                            variant={batch.status === 'completed' ? 'success' : 'warning'}
-                            className="text-xs ml-2"
-                          >
-                            {batch.status === 'completed' ? 'Closed' : 'Pending'}
-                          </Badge>
-                        </button>
-                      ))
-                    )}
-                  </div>
-
-                  {!batchSearch && batches.length === 5 && (
-                    <div className="px-4 py-2 text-xs text-gray-500 border-t bg-gray-50">
-                      Showing latest 5 batches. Search to find more.
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
+      {/* Top Controls */}
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        {/* Left: Gateway and Date selectors */}
+        <div className="flex items-end gap-4 flex-wrap">
           {/* Gateway Selector */}
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700">Gateway</label>
             <select
               value={selectedGateway}
-              onChange={(e) => {
-                setSelectedGateway(e.target.value);
-                setPage(1);
-              }}
-              disabled={!selectedBatch || gatewaysLoading}
+              onChange={(e) => handleGatewayChange(e.target.value)}
               className={cn(
                 'w-48 px-3 py-2 border rounded-lg bg-white',
-                'focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400',
-                'disabled:bg-gray-100 disabled:cursor-not-allowed'
+                'focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400'
               )}
             >
-              <option value="">
-                {!selectedBatch
-                  ? 'Select batch first'
-                  : gatewaysLoading
-                    ? 'Loading...'
-                    : 'Select gateway...'}
-              </option>
+              <option value="">All Gateways</option>
               {uniqueBaseGateways.map((gw) => (
                 <option key={gw} value={gw}>
                   {gw.charAt(0).toUpperCase() + gw.slice(1)}
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Date Range */}
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700">From</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => {
+                setDateFrom(e.target.value);
+                setPage(1);
+              }}
+              className="w-40 px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700">To</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => {
+                setDateTo(e.target.value);
+                setPage(1);
+              }}
+              className="w-40 px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400"
+            />
           </div>
         </div>
 
@@ -347,15 +239,7 @@ export function TransactionsPage() {
       </div>
 
       {/* Content */}
-      {!selectedBatch ? (
-        <Alert variant="info" title="Select a batch">
-          Please select a batch to view transactions.
-        </Alert>
-      ) : !selectedGateway ? (
-        <Alert variant="info" title="Select a gateway">
-          Please select a gateway to view transactions.
-        </Alert>
-      ) : transactionsLoading ? (
+      {transactionsLoading ? (
         <PageLoading />
       ) : transactionsError ? (
         <Alert variant="error" title="Error loading transactions">
@@ -403,7 +287,7 @@ export function TransactionsPage() {
                       message={
                         searchInput
                           ? 'No transactions match your search'
-                          : 'No transactions found for this batch and gateway'
+                          : 'No transactions found'
                       }
                       colSpan={5}
                     />

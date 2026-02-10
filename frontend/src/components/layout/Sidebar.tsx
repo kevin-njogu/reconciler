@@ -2,8 +2,6 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
-  FolderOpen,
-  Upload,
   GitCompare,
   FileText,
   Settings,
@@ -28,20 +26,15 @@ interface NavItem {
 }
 
 const navigation: NavItem[] = [
-  // User (inputter) menus - available to all roles except where specified
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Batches', href: '/batches', icon: FolderOpen, excludeSuperAdmin: true },
-  { name: 'Upload Files', href: '/upload', icon: Upload, userOnly: true },
-  { name: 'Reconciliation', href: '/reconciliation', icon: GitCompare, userOnly: true },
+  { name: 'Reconcile', href: '/reconcile', icon: GitCompare, userOnly: true },
   { name: 'Manual Recon', href: '/operations', icon: Wrench, userOnly: true },
-  { name: 'Reports', href: '/reports', icon: FileText },
-  { name: 'Transactions', href: '/transactions', icon: List },
-  // Gateway management - users can request changes
   { name: 'Gateways', href: '/gateways', icon: Settings, userOnly: true },
+  { name: 'Transactions', href: '/transactions', icon: List },
+  { name: 'Reports', href: '/reports', icon: FileText },
   // Admin (approver) menus - only for admin role (not super_admin)
   { name: 'Reconciliation Approvals', href: '/reconciliation-approvals', icon: ShieldCheck, adminOnlyStrict: true },
   { name: 'Gateway Approvals', href: '/gateway-approvals', icon: CheckSquare, adminOnlyStrict: true },
-  { name: 'System Settings', href: '/settings', icon: Cog },
   // Super Admin only menus
   { name: 'Users', href: '/users', icon: Users, superAdminOnly: true },
 ];

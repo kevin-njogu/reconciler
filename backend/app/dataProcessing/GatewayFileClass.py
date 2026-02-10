@@ -74,7 +74,6 @@ class GatewayFile:
 
     def __init__(
         self,
-        batch_id: str,
         gateway_name: str,
         data_loader: Optional[DataLoader] = None
     ):
@@ -82,11 +81,9 @@ class GatewayFile:
         Initialize GatewayFile.
 
         Args:
-            batch_id: The batch identifier for file storage.
             gateway_name: Gateway name to filter files (e.g., 'equity', 'workpay_equity').
             data_loader: Optional DataLoader instance. Defaults to new DataLoader.
         """
-        self.batch_id = batch_id
         self.gateway_name = gateway_name.lower().strip()
         self.data_loader = data_loader or DataLoader()
         self.dataframe: Optional[pd.DataFrame] = None
@@ -97,16 +94,16 @@ class GatewayFile:
 
     def load_data(self) -> None:
         """
-        Load data for the gateway from the batch.
+        Load data for the gateway.
 
         Raises:
             ReadFileException: If no file found or error reading file.
         """
         try:
-            df = self.data_loader.load_gateway_data(self.batch_id, self.gateway_name)
+            df = self.data_loader.load_gateway_data(self.gateway_name)
             if df.empty:
                 raise ReadFileException(
-                    f"No data found for gateway '{self.gateway_name}' in batch '{self.batch_id}'"
+                    f"No data found for gateway '{self.gateway_name}'"
                 )
             self.dataframe = df
         except ReadFileException:
@@ -124,10 +121,10 @@ class GatewayFile:
             ReadFileException: If no files found or error reading files.
         """
         try:
-            dataframes = self.data_loader.load_all_gateway_data(self.batch_id, self.gateway_name)
+            dataframes = self.data_loader.load_all_gateway_data(self.gateway_name)
             if not dataframes:
                 raise ReadFileException(
-                    f"No data found for gateway '{self.gateway_name}' in batch '{self.batch_id}'"
+                    f"No data found for gateway '{self.gateway_name}'"
                 )
             self.dataframe = pd.concat(dataframes, ignore_index=True)
         except ReadFileException:
@@ -287,12 +284,6 @@ class GatewayFile:
         Clean reference value for reconciliation key generation.
 
         Converts to string, removes decimals, handles edge cases.
-
-        Args:
-            reference: The reference value to clean.
-
-        Returns:
-            Clean string reference for key generation.
         """
         if pd.isna(reference) or reference in ("", "NA", "na", "N/A"):
             return "NA"
@@ -303,10 +294,8 @@ class GatewayFile:
         # Handle numeric references that might have decimals
         try:
             ref_float = float(ref_str)
-            # Convert to integer (removes decimals) then back to string
             return str(int(ref_float))
         except (ValueError, TypeError):
-            # Not a number, return as-is
             return ref_str
 
     @staticmethod
@@ -315,21 +304,11 @@ class GatewayFile:
         Clean amount value for reconciliation key generation.
 
         Converts to absolute whole number using standard rounding.
-        e.g., 1000.50+ -> 1001, 1000.49- -> 1000
-
-        Args:
-            amount: The amount value to clean.
-
-        Returns:
-            Clean string amount for key generation (whole number only).
         """
         if pd.isna(amount):
             return "0"
 
         try:
-            # Convert to absolute value, then round to nearest whole number
-            # Standard rounding: .50+ rounds up, .49- rounds down
-            # e.g., 1000.50 -> 1001, 1000.49 -> 1000
             amount_float = abs(float(amount))
             return str(round(amount_float))
         except (ValueError, TypeError):
@@ -341,14 +320,6 @@ class GatewayFile:
         Generate a reconciliation key for matching transactions.
 
         Key format: {reference}|{amount}|{base_gateway}
-
-        Args:
-            reference: Transaction reference (cleaned to string without decimals).
-            amount: Transaction amount (cleaned to absolute whole number).
-            base_gateway: Base gateway name (e.g., 'equity').
-
-        Returns:
-            Reconciliation key string.
         """
         clean_ref = GatewayFile.clean_reference_for_key(reference)
         clean_amount = GatewayFile.clean_amount_for_key(amount)
@@ -384,12 +355,7 @@ class GatewayFile:
         return self.dataframe
 
     def get_transaction_ids(self) -> set:
-        """
-        Get unique Reference (Transaction IDs) from the file.
-
-        Returns:
-            Set of reference/transaction IDs.
-        """
+        """Get unique Reference (Transaction IDs) from the file."""
         if self.dataframe is None:
             self.normalize_data()
 
@@ -402,12 +368,7 @@ class GatewayFile:
         )
 
     def get_debits(self) -> pd.DataFrame:
-        """
-        Get all debit transactions (Debit > 0).
-
-        Returns:
-            DataFrame with debit transactions.
-        """
+        """Get all debit transactions (Debit > 0)."""
         try:
             if self.dataframe is None:
                 self.normalize_data()
@@ -418,12 +379,7 @@ class GatewayFile:
             raise FileOperationsException("Error extracting debit transactions") from e
 
     def get_credits(self) -> pd.DataFrame:
-        """
-        Get all credit transactions (Credit > 0).
-
-        Returns:
-            DataFrame with credit transactions.
-        """
+        """Get all credit transactions (Credit > 0)."""
         try:
             if self.dataframe is None:
                 self.normalize_data()
@@ -436,16 +392,6 @@ class GatewayFile:
     def get_charges(self, charge_keywords: List[str]) -> pd.DataFrame:
         """
         Get charge transactions based on keywords in Reference or Details columns and Debit > 0.
-
-        Transactions are identified as charges if:
-        - Debit > 0 AND
-        - Reference contains any charge keyword OR Details contains any charge keyword
-
-        Args:
-            charge_keywords: Keywords that identify charge transactions.
-
-        Returns:
-            DataFrame with charge transactions.
         """
         try:
             if self.dataframe is None:
@@ -456,7 +402,6 @@ class GatewayFile:
 
             regex_pattern = "|".join(map(re.escape, charge_keywords))
 
-            # Check both Reference and Details columns for charge keywords
             narrative_series = self.dataframe[DETAILS_COLUMN].astype(str)
             reference_series = self.dataframe[REFERENCE_COLUMN].astype(str)
 
@@ -470,18 +415,7 @@ class GatewayFile:
             raise FileOperationsException("Error extracting charge transactions") from e
 
     def get_non_charge_debits(self, charge_keywords: List[str]) -> pd.DataFrame:
-        """
-        Get debit transactions that are not charges.
-
-        Excludes transactions where:
-        - Debit > 0 AND (Reference OR Details contains any charge keyword)
-
-        Args:
-            charge_keywords: Keywords that identify charge transactions to exclude.
-
-        Returns:
-            DataFrame with non-charge debit transactions.
-        """
+        """Get debit transactions that are not charges."""
         try:
             if self.dataframe is None:
                 self.normalize_data()
@@ -493,7 +427,6 @@ class GatewayFile:
 
             regex_pattern = "|".join(map(re.escape, charge_keywords))
 
-            # Check both Reference and Details columns for charge keywords
             narrative_series = self.dataframe[DETAILS_COLUMN].astype(str)
             reference_series = self.dataframe[REFERENCE_COLUMN].astype(str)
 
@@ -506,15 +439,7 @@ class GatewayFile:
             raise FileOperationsException("Error extracting non-charge debit transactions") from e
 
     def get_payouts(self) -> pd.DataFrame:
-        """
-        Get payout transactions (debits for internal records).
-
-        For internal records:
-        - Debits represent payouts (money going out to recipients)
-
-        Returns:
-            DataFrame with payout transactions.
-        """
+        """Get payout transactions (debits for internal records)."""
         try:
             if self.dataframe is None:
                 self.normalize_data()
@@ -525,16 +450,7 @@ class GatewayFile:
             raise FileOperationsException("Error extracting payout transactions") from e
 
     def filter_by_narrative(self, keywords: List[str], include: bool = True) -> pd.DataFrame:
-        """
-        Filter transactions by narrative keywords.
-
-        Args:
-            keywords: List of keywords to search for in narrative.
-            include: If True, include matching rows. If False, exclude them.
-
-        Returns:
-            Filtered DataFrame.
-        """
+        """Filter transactions by narrative keywords."""
         try:
             if self.dataframe is None:
                 self.normalize_data()
@@ -554,12 +470,7 @@ class GatewayFile:
             raise FileOperationsException("Error filtering transactions by narrative") from e
 
     def get_summary(self) -> dict:
-        """
-        Get summary statistics for the loaded data.
-
-        Returns:
-            Dictionary with summary statistics.
-        """
+        """Get summary statistics for the loaded data."""
         if self.dataframe is None:
             self.normalize_data()
 
@@ -568,7 +479,6 @@ class GatewayFile:
 
         return {
             "gateway": self.gateway_name,
-            "batch_id": self.batch_id,
             "total_transactions": len(self.dataframe),
             "total_credits": float(total_credits),
             "total_debits": float(total_debits),

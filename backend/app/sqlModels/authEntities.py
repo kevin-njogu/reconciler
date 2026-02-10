@@ -1,7 +1,7 @@
 """
 Authentication and Authorization Database Models.
 
-Defines User, RefreshToken, OTPToken, LoginSession, and AuditLog tables.
+Defines User, RefreshToken, LoginSession, and AuditLog tables.
 """
 from enum import Enum as PyEnum
 from sqlalchemy import (
@@ -33,13 +33,6 @@ class UserStatus(PyEnum):
     ACTIVE = "active"
     BLOCKED = "blocked"
     DEACTIVATED = "deactivated"
-
-
-class OTPPurpose(PyEnum):
-    """OTP purpose types."""
-    LOGIN = "login"
-    WELCOME = "welcome"
-    FORGOT_PASSWORD = "forgot_password"
 
 
 class User(Base):
@@ -84,7 +77,6 @@ class User(Base):
     # Relationships
     created_by = relationship("User", remote_side=[id], backref="created_users")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
-    otp_tokens = relationship("OTPToken", back_populates="user", cascade="all, delete-orphan")
     login_sessions = relationship("LoginSession", back_populates="user", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="user", foreign_keys="AuditLog.user_id")
 
@@ -170,55 +162,6 @@ class RefreshToken(Base):
         """Check if token is valid (not revoked and not expired)."""
         from datetime import datetime, timezone
         return not self.revoked and self.expires_at > datetime.now(timezone.utc)
-
-
-class OTPToken(Base):
-    """
-    OTP token storage for two-factor authentication.
-
-    Stores hashed OTP codes with purpose, expiry, and attempt tracking.
-    """
-    __tablename__ = "otp_tokens"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-
-    # OTP details
-    otp_hash = Column(String(255), nullable=False, comment="Bcrypt hash of 6-digit OTP")
-    purpose = Column(String(50), nullable=False, comment="login, welcome, or forgot_password")
-
-    # Lifecycle
-    expires_at = Column(DateTime, nullable=False)
-    is_used = Column(Boolean, default=False, nullable=False)
-    used_at = Column(DateTime, nullable=True)
-    attempts = Column(Integer, default=0, nullable=False, comment="Wrong OTP attempts (max 3)")
-
-    # Request context
-    ip_address = Column(String(45), nullable=True)
-    user_agent = Column(String(500), nullable=True)
-
-    # Timestamps
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
-
-    # Relationships
-    user = relationship("User", back_populates="otp_tokens")
-
-    # Indexes
-    __table_args__ = (
-        Index('ix_otp_user_purpose', 'user_id', 'purpose'),
-        Index('ix_otp_expires', 'expires_at'),
-    )
-
-    def __repr__(self):
-        return f"<OTPToken(id={self.id}, user_id={self.user_id}, purpose='{self.purpose}')>"
-
-    def is_expired(self) -> bool:
-        """Check if OTP has expired."""
-        from datetime import datetime, timezone
-        expires = self.expires_at
-        if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
-        return expires < datetime.now(timezone.utc)
 
 
 class LoginSession(Base):

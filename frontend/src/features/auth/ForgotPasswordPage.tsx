@@ -3,13 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Cog, ArrowLeft, Mail, ShieldCheck, CheckCircle } from 'lucide-react';
+import { Cog, ArrowLeft, Mail, CheckCircle } from 'lucide-react';
 import { Button, Input, Alert, PasswordInput } from '@/components/ui';
-import { OTPInput } from '@/components/auth/OTPInput';
-import { useCountdown } from '@/components/auth/CountdownTimer';
 import { authApi, getErrorMessage } from '@/api';
 
-type Step = 'email' | 'otp' | 'reset';
+type Step = 'email' | 'reset';
 
 const emailSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Please enter a valid email'),
@@ -17,6 +15,7 @@ const emailSchema = z.object({
 
 const resetSchema = z
   .object({
+    resetToken: z.string().min(1, 'Reset token is required'),
     newPassword: z.string().min(8, 'Password must be at least 8 characters'),
     confirmPassword: z.string().min(1, 'Please confirm your password'),
   })
@@ -33,96 +32,49 @@ export function ForgotPasswordPage() {
 
   const [step, setStep] = useState<Step>('email');
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [email, setEmail] = useState('');
-  const [otpValue, setOtpValue] = useState('');
-  const [otpExpiresIn, setOtpExpiresIn] = useState(300);
-  const [resetToken, setResetToken] = useState('');
-
-  // OTP expiry countdown
-  const { display: otpDisplay, isExpired: otpIsExpired } = useCountdown(
-    step === 'otp' ? otpExpiresIn : 0
-  );
 
   // Step 1: Email form
   const emailForm = useForm<EmailFormData>({
     resolver: zodResolver(emailSchema),
   });
 
-  // Step 3: Reset password form
+  // Step 2: Reset password form
   const resetForm = useForm<ResetFormData>({
     resolver: zodResolver(resetSchema),
   });
 
-  // Step 1: Submit email → request OTP
+  // Step 1: Submit email → request reset token
   const onSubmitEmail = async (data: EmailFormData) => {
     setError(null);
     setIsLoading(true);
 
     try {
-      await authApi.forgotPassword({ email: data.email });
-      setEmail(data.email);
-      setOtpExpiresIn(300);
-      setOtpValue('');
-      setStep('otp');
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Step 2: Submit OTP → verify reset code
-  const onSubmitOTP = async () => {
-    if (otpValue.length !== 6) return;
-    setError(null);
-    setIsLoading(true);
-
-    try {
-      const response = await authApi.verifyResetOTP({
-        email,
-        otp_code: otpValue,
-      });
-      setResetToken(response.reset_token);
+      const response = await authApi.forgotPassword({ email: data.email });
+      setSuccessMessage(response.message);
       setStep('reset');
     } catch (err) {
       setError(getErrorMessage(err));
-      setOtpValue('');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Step 3: Submit new password
+  // Step 2: Submit new password with reset token
   const onSubmitReset = async (data: ResetFormData) => {
     setError(null);
     setIsLoading(true);
 
     try {
       await authApi.resetPassword({
-        reset_token: resetToken,
+        reset_token: data.resetToken,
         new_password: data.newPassword,
       });
       navigate('/login', {
         state: { passwordReset: true },
         replace: true,
       });
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Resend OTP
-  const handleResendOTP = async () => {
-    setError(null);
-    setIsLoading(true);
-
-    try {
-      await authApi.forgotPassword({ email });
-      setOtpExpiresIn(300);
-      setOtpValue('');
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -157,7 +109,7 @@ export function ForgotPasswordPage() {
                   Forgot password?
                 </h1>
                 <p className="text-neutral-500">
-                  Enter your email and we'll send you a verification code
+                  Enter your email and we'll send you a reset token
                 </p>
               </div>
 
@@ -171,7 +123,7 @@ export function ForgotPasswordPage() {
                 />
 
                 <Button type="submit" className="w-full" isLoading={isLoading}>
-                  Send Reset Code
+                  Send Reset Token
                 </Button>
 
                 <div className="text-center">
@@ -187,75 +139,7 @@ export function ForgotPasswordPage() {
             </>
           )}
 
-          {/* Step 2: Enter OTP */}
-          {step === 'otp' && (
-            <>
-              <div className="text-center mb-8">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary-50 mb-4">
-                  <ShieldCheck className="h-8 w-8 text-primary-600" />
-                </div>
-                <h1 className="text-2xl font-semibold text-neutral-800 mb-2">
-                  Enter verification code
-                </h1>
-                <p className="text-neutral-500">
-                  We sent a 6-digit code to <span className="font-medium">{email}</span>
-                </p>
-              </div>
-
-              <div className="space-y-6">
-                <OTPInput
-                  value={otpValue}
-                  onChange={setOtpValue}
-                  disabled={isLoading}
-                  error={!!error}
-                />
-
-                {/* OTP Expiry Timer */}
-                <div className="text-center">
-                  {!otpIsExpired ? (
-                    <p className="text-sm text-neutral-500">
-                      Code expires in <span className="font-medium text-neutral-700">{otpDisplay}</span>
-                    </p>
-                  ) : (
-                    <Alert variant="warning" className="text-sm">
-                      Your code has expired. Please request a new one.
-                    </Alert>
-                  )}
-                </div>
-
-                <Button
-                  onClick={onSubmitOTP}
-                  className="w-full"
-                  isLoading={isLoading}
-                  disabled={otpValue.length !== 6 || otpIsExpired}
-                >
-                  Verify Code
-                </Button>
-
-                <div className="flex items-center justify-between text-sm">
-                  <button
-                    type="button"
-                    onClick={() => { setStep('email'); setError(null); }}
-                    className="flex items-center gap-1 text-neutral-500 hover:text-neutral-700"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Change email
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleResendOTP}
-                    disabled={isLoading}
-                    className="text-primary-600 hover:text-primary-700 font-medium disabled:opacity-50"
-                  >
-                    Resend code
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Step 3: New Password */}
+          {/* Step 2: Enter Reset Token + New Password */}
           {step === 'reset' && (
             <>
               <div className="text-center mb-8">
@@ -266,11 +150,25 @@ export function ForgotPasswordPage() {
                   Set new password
                 </h1>
                 <p className="text-neutral-500">
-                  Create a strong password for your account
+                  Check your email for the reset token, then enter it below with your new password
                 </p>
               </div>
 
+              {successMessage && (
+                <Alert variant="info" className="mb-6">
+                  {successMessage}
+                </Alert>
+              )}
+
               <form onSubmit={resetForm.handleSubmit(onSubmitReset)} className="space-y-5">
+                <Input
+                  label="Reset Token"
+                  type="text"
+                  placeholder="Paste the reset token from your email"
+                  error={resetForm.formState.errors.resetToken?.message}
+                  {...resetForm.register('resetToken')}
+                />
+
                 <PasswordInput
                   label="New Password"
                   placeholder="Enter new password"
@@ -288,6 +186,17 @@ export function ForgotPasswordPage() {
                 <Button type="submit" className="w-full" isLoading={isLoading}>
                   Reset Password
                 </Button>
+
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => { setStep('email'); setError(null); setSuccessMessage(null); }}
+                    className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-700"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Back to email
+                  </button>
+                </div>
               </form>
             </>
           )}

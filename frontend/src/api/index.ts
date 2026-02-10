@@ -1,7 +1,7 @@
 export { apiClient, tokenStorage, getErrorMessage } from './client';
 export { authApi } from './auth';
 export { usersApi } from './users';
-export { batchesApi } from './batches';
+export { runsApi } from './runs';
 export { gatewaysApi } from './gateways';
 export { uploadApi } from './upload';
 export { reconciliationApi } from './reconciliation';
@@ -9,4 +9,3 @@ export { reportsApi } from './reports';
 export { operationsApi } from './operations';
 export { dashboardApi } from './dashboard';
 export { transactionsApi } from './transactions';
-export { settingsApi } from './settings';

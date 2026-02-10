@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import List, Optional, BinaryIO
+from typing import List, BinaryIO
 
 from app.exceptions.exceptions import FileUploadException, ReadFileException
 from app.storage.base import StorageBackend
@@ -28,51 +28,33 @@ def _validate_path_component(name: str, component_type: str = "name") -> None:
 class LocalStorage(StorageBackend):
     """
     Local filesystem storage backend.
-    Stores files in: {base_path}/{batch_id}/{gateway}/{filename}
+    Stores files in: {base_path}/{gateway}/{filename}
     """
 
     def __init__(self, base_path: str = "uploads"):
         self.base_path = Path(base_path).resolve()
 
-    def _get_batch_path(self, batch_id: str) -> Path:
-        """Get the full path for a batch directory."""
-        _validate_path_component(batch_id, "batch_id")
-        path = (self.base_path / batch_id).resolve()
+    def _get_gateway_path(self, gateway: str) -> Path:
+        """Get the full path for a gateway directory."""
+        _validate_path_component(gateway, "gateway")
+        path = (self.base_path / gateway).resolve()
         if not str(path).startswith(str(self.base_path)):
-            raise ValueError("Path traversal detected in batch_id")
+            raise ValueError("Path traversal detected in gateway")
         return path
 
-    def _get_file_path(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> Path:
-        """Get the full path for a file, optionally within a gateway subdirectory."""
+    def _get_file_path(self, gateway: str, filename: str) -> Path:
+        """Get the full path for a file within a gateway directory."""
         _validate_path_component(filename, "filename")
-        if gateway:
-            _validate_path_component(gateway, "gateway")
-            path = (self._get_batch_path(batch_id) / gateway / filename).resolve()
-        else:
-            path = (self._get_batch_path(batch_id) / filename).resolve()
+        path = (self._get_gateway_path(gateway) / filename).resolve()
         if not str(path).startswith(str(self.base_path)):
             raise ValueError("Path traversal detected")
         return path
 
-    def save_file(self, batch_id: str, filename: str, content: bytes, gateway: Optional[str] = None) -> str:
-        """
-        Save a file to local storage.
-
-        Args:
-            batch_id: The batch identifier.
-            filename: Name of the file to save.
-            content: File content as bytes.
-            gateway: Optional gateway subdirectory.
-
-        Returns:
-            Path where the file was saved.
-        """
+    def save_file(self, gateway: str, filename: str, content: bytes) -> str:
+        """Save a file to local storage."""
         try:
-            if gateway:
-                self.ensure_gateway_directory(batch_id, gateway)
-            else:
-                self.ensure_batch_directory(batch_id)
-            file_path = self._get_file_path(batch_id, filename, gateway)
+            self.ensure_gateway_directory(gateway)
+            file_path = self._get_file_path(gateway, filename)
             with open(file_path, "wb") as f:
                 f.write(content)
             return str(file_path)
@@ -81,19 +63,9 @@ class LocalStorage(StorageBackend):
         except OSError as e:
             raise FileUploadException(f"Failed to save file {filename}: {str(e)}")
 
-    def read_file_bytes(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> bytes:
-        """
-        Read a file's content as bytes from local storage.
-
-        Args:
-            batch_id: The batch identifier.
-            filename: Name of the file to read.
-            gateway: Optional gateway subdirectory.
-
-        Returns:
-            File content as bytes.
-        """
-        file_path = self._get_file_path(batch_id, filename, gateway)
+    def read_file_bytes(self, gateway: str, filename: str) -> bytes:
+        """Read a file's content as bytes from local storage."""
+        file_path = self._get_file_path(gateway, filename)
         if not file_path.exists():
             raise ReadFileException(f"File not found: {file_path}")
         try:
@@ -102,91 +74,33 @@ class LocalStorage(StorageBackend):
         except OSError as e:
             raise ReadFileException(f"Failed to read file {filename}: {str(e)}")
 
-    def list_files(self, batch_id: str, gateway: Optional[str] = None) -> List[str]:
-        """
-        List all files in a batch directory or gateway subdirectory.
-
-        Args:
-            batch_id: The batch identifier.
-            gateway: Optional gateway subdirectory name.
-
-        Returns:
-            List of filenames.
-        """
-        if gateway:
-            target_path = self._get_batch_path(batch_id) / gateway
-        else:
-            target_path = self._get_batch_path(batch_id)
+    def list_files(self, gateway: str) -> List[str]:
+        """List all files in a gateway directory."""
+        target_path = self._get_gateway_path(gateway)
 
         if not target_path.exists():
-            if gateway:
-                return []  # Gateway dir may not exist yet
-            raise ReadFileException(f"Batch directory not found: {batch_id}")
+            return []
         try:
             return [f.name for f in target_path.iterdir() if f.is_file()]
         except OSError as e:
             raise ReadFileException(f"Failed to list files in {target_path}: {str(e)}")
 
-    def file_exists(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> bool:
-        """
-        Check if a file exists in local storage.
+    def file_exists(self, gateway: str, filename: str) -> bool:
+        """Check if a file exists in local storage."""
+        return self._get_file_path(gateway, filename).exists()
 
-        Args:
-            batch_id: The batch identifier.
-            filename: Name of the file to check.
-            gateway: Optional gateway subdirectory.
-
-        Returns:
-            True if file exists, False otherwise.
-        """
-        return self._get_file_path(batch_id, filename, gateway).exists()
-
-    def ensure_batch_directory(self, batch_id: str) -> None:
-        """
-        Ensure the batch directory exists in local storage.
-
-        Args:
-            batch_id: The batch identifier.
-        """
+    def ensure_gateway_directory(self, gateway: str) -> None:
+        """Ensure the gateway directory exists in local storage."""
         try:
-            batch_path = self._get_batch_path(batch_id)
             self.base_path.mkdir(parents=True, exist_ok=True)
-            batch_path.mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            raise FileUploadException(f"Failed to create batch directory {batch_id}: {str(e)}")
-
-    def ensure_gateway_directory(self, batch_id: str, gateway: str) -> None:
-        """
-        Ensure the gateway subdirectory exists within a batch directory.
-
-        Args:
-            batch_id: The batch identifier.
-            gateway: The gateway name for the subdirectory.
-        """
-        try:
-            self.ensure_batch_directory(batch_id)
-            gateway_path = self._get_batch_path(batch_id) / gateway
+            gateway_path = self._get_gateway_path(gateway)
             gateway_path.mkdir(parents=True, exist_ok=True)
-        except FileUploadException:
-            raise
         except OSError as e:
-            raise FileUploadException(
-                f"Failed to create gateway directory {gateway} in batch {batch_id}: {str(e)}"
-            )
+            raise FileUploadException(f"Failed to create gateway directory {gateway}: {str(e)}")
 
-    def get_file_handle(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> BinaryIO:
-        """
-        Get a file handle for reading from local storage.
-
-        Args:
-            batch_id: The batch identifier.
-            filename: Name of the file.
-            gateway: Optional gateway subdirectory.
-
-        Returns:
-            Binary file handle.
-        """
-        file_path = self._get_file_path(batch_id, filename, gateway)
+    def get_file_handle(self, gateway: str, filename: str) -> BinaryIO:
+        """Get a file handle for reading from local storage."""
+        file_path = self._get_file_path(gateway, filename)
         if not file_path.exists():
             raise ReadFileException(f"File not found: {file_path}")
         try:
@@ -194,19 +108,9 @@ class LocalStorage(StorageBackend):
         except OSError as e:
             raise ReadFileException(f"Failed to open file {filename}: {str(e)}")
 
-    def delete_file(self, batch_id: str, filename: str, gateway: Optional[str] = None) -> bool:
-        """
-        Delete a file from local storage.
-
-        Args:
-            batch_id: The batch identifier.
-            filename: Name of the file to delete.
-            gateway: Optional gateway subdirectory.
-
-        Returns:
-            True if file was deleted, False if file didn't exist.
-        """
-        file_path = self._get_file_path(batch_id, filename, gateway)
+    def delete_file(self, gateway: str, filename: str) -> bool:
+        """Delete a file from local storage."""
+        file_path = self._get_file_path(gateway, filename)
         if not file_path.exists():
             return False
         try:
@@ -214,30 +118,3 @@ class LocalStorage(StorageBackend):
             return True
         except OSError as e:
             raise FileUploadException(f"Failed to delete file {filename}: {str(e)}")
-
-    def delete_batch_directory(self, batch_id: str) -> int:
-        """
-        Delete all files in a batch directory (including subdirectories) and the directory itself.
-
-        Args:
-            batch_id: The batch identifier.
-
-        Returns:
-            Number of files deleted.
-        """
-        batch_path = self._get_batch_path(batch_id)
-        if not batch_path.exists():
-            return 0
-        deleted_count = 0
-        try:
-            # Recursively delete all files in subdirectories first
-            for item in sorted(batch_path.rglob("*"), reverse=True):
-                if item.is_file():
-                    item.unlink()
-                    deleted_count += 1
-                elif item.is_dir():
-                    item.rmdir()
-            batch_path.rmdir()
-            return deleted_count
-        except OSError as e:
-            raise FileUploadException(f"Failed to delete batch directory {batch_id}: {str(e)}")

@@ -16,7 +16,7 @@ import {
   FileText,
   Server,
 } from 'lucide-react';
-import { gatewaysApi, settingsApi, getErrorMessage } from '@/api';
+import { gatewaysApi, getErrorMessage } from '@/api';
 import {
   Button,
   Card,
@@ -37,7 +37,6 @@ import {
   Modal,
   ModalFooter,
   Input,
-  Select,
   CompactPagination,
 } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
@@ -79,36 +78,84 @@ const DEFAULT_FILETYPES = ['xlsx', 'xls', 'csv'];
 // Template columns for column mapping
 const TEMPLATE_COLUMNS = ['Date', 'Reference', 'Details', 'Debit', 'Credit'] as const;
 
+/**
+ * Infer a Python strftime date format from an example date string.
+ * The user types an example date (e.g., "08-02-2026") and this function
+ * figures out the format. Prefers DD/MM over MM/DD (Kenya standard).
+ */
+function inferDateFormat(example: string): { format: string; label: string } | null {
+  const trimmed = example.trim();
+  if (!trimmed) return null;
+
+  const sep = trimmed.includes('/') ? '/' : trimmed.includes('-') ? '-' : trimmed.includes('.') ? '.' : null;
+  if (!sep) return null;
+
+  const parts = trimmed.split(sep);
+  if (parts.length !== 3) return null;
+
+  // YYYY-MM-DD (first part is 4 digits)
+  if (parts[0].length === 4) {
+    return { format: `%Y${sep}%m${sep}%d`, label: `YYYY${sep}MM${sep}DD` };
+  }
+
+  // DD/MM/YYYY or MM/DD/YYYY (last part is 4 digits)
+  if (parts[2].length === 4) {
+    const first = parseInt(parts[0], 10);
+    const second = parseInt(parts[1], 10);
+    if (isNaN(first) || isNaN(second)) return null;
+
+    // If first > 12, it must be DD
+    if (first > 12) {
+      return { format: `%d${sep}%m${sep}%Y`, label: `DD${sep}MM${sep}YYYY` };
+    }
+    // If second > 12, first must be MM
+    if (second > 12) {
+      return { format: `%m${sep}%d${sep}%Y`, label: `MM${sep}DD${sep}YYYY` };
+    }
+    // Ambiguous — default to DD/MM/YYYY (Kenya standard)
+    return { format: `%d${sep}%m${sep}%Y`, label: `DD${sep}MM${sep}YYYY` };
+  }
+
+  // DD/MM/YY (two-digit year)
+  if (parts[2].length === 2) {
+    return { format: `%d${sep}%m${sep}%y`, label: `DD${sep}MM${sep}YY` };
+  }
+
+  return null;
+}
+
 interface FileConfigFormData {
   name: string;
-  filename_prefix: string;
   expected_filetypes: string[];
   header_row_xlsx: number;
   header_row_xls: number;
   header_row_csv: number;
   end_of_data_signal: string;
-  date_format_id: number | null;
-  column_mapping: Record<string, string>; // Template column -> comma-separated raw column names
+  date_format: string;
+  date_example: string; // User-entered example date for inference
+  charge_keywords: string; // Comma-separated keywords (e.g., "FEE, CHARGE, COMMISSION")
+  column_mapping: Record<string, string>;
 }
 
 interface GatewayFormData {
   display_name: string;
   description: string;
-  country_id: number | null;
-  currency_id: number | null;
+  country: string;
+  currency_code: string;
   external_config: FileConfigFormData;
   internal_config: FileConfigFormData;
 }
 
 const initialFileConfig: FileConfigFormData = {
   name: '',
-  filename_prefix: '',
   expected_filetypes: [...DEFAULT_FILETYPES],
   header_row_xlsx: 0,
   header_row_xls: 0,
   header_row_csv: 0,
   end_of_data_signal: '',
-  date_format_id: null,
+  date_format: '',
+  date_example: '',
+  charge_keywords: '',
   column_mapping: {
     Date: '',
     Reference: '',
@@ -121,8 +168,8 @@ const initialFileConfig: FileConfigFormData = {
 const initialFormData: GatewayFormData = {
   display_name: '',
   description: '',
-  country_id: null,
-  currency_id: null,
+  country: '',
+  currency_code: '',
   external_config: { ...initialFileConfig },
   internal_config: { ...initialFileConfig },
 };
@@ -150,35 +197,29 @@ export function GatewaysPage() {
   // Form state
   const [formData, setFormData] = useState<GatewayFormData>({ ...initialFormData });
 
-  // Fetch unified gateways
+  // Fetch gateways
   const {
     data: gatewaysData,
     isLoading,
     error,
   } = useQuery({
     queryKey: ['unified-gateways', { include_inactive: true }],
-    queryFn: () => gatewaysApi.unified.list(true),
-    staleTime: 0, // Always refetch to get latest data after admin approval
-    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    queryFn: () => gatewaysApi.list(true),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
-  // Fetch settings for dropdowns
-  const { data: allSettings } = useQuery({
-    queryKey: ['all-settings'],
-    queryFn: () => settingsApi.getAll(),
-  });
-
-  // Fetch my change requests (legacy + unified)
+  // Fetch my change requests
   const { data: myRequestsData } = useQuery({
     queryKey: ['my-gateway-requests'],
     queryFn: () => gatewaysApi.getMyChangeRequests(),
-    staleTime: 0, // Always refetch to get latest approval status
-    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   // Create change request mutation
   const createRequestMutation = useMutation({
-    mutationFn: gatewaysApi.unified.createChangeRequest,
+    mutationFn: gatewaysApi.createChangeRequest,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-gateway-requests'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['unified-gateways'], refetchType: 'all' });
@@ -192,7 +233,7 @@ export function GatewaysPage() {
 
   // Update change request mutation
   const updateRequestMutation = useMutation({
-    mutationFn: gatewaysApi.unified.createChangeRequest,
+    mutationFn: gatewaysApi.createChangeRequest,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-gateway-requests'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['unified-gateways'], refetchType: 'all' });
@@ -207,7 +248,7 @@ export function GatewaysPage() {
 
   // Delete/Deactivate change request mutation
   const deleteRequestMutation = useMutation({
-    mutationFn: gatewaysApi.unified.createChangeRequest,
+    mutationFn: gatewaysApi.createChangeRequest,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-gateway-requests'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['unified-gateways'], refetchType: 'all' });
@@ -278,12 +319,11 @@ export function GatewaysPage() {
     return {
       display_name: formData.display_name,
       description: formData.description || null,
-      country_id: formData.country_id,
-      currency_id: formData.currency_id,
+      country: formData.country || null,
+      currency_code: formData.currency_code || null,
       external_config: {
         config_type: 'external',
         name: formData.external_config.name,
-        filename_prefix: formData.external_config.filename_prefix || null,
         expected_filetypes: formData.external_config.expected_filetypes,
         header_row_config: {
           xlsx: formData.external_config.header_row_xlsx,
@@ -291,13 +331,15 @@ export function GatewaysPage() {
           csv: formData.external_config.header_row_csv,
         },
         end_of_data_signal: formData.external_config.end_of_data_signal || null,
-        date_format_id: formData.external_config.date_format_id,
+        date_format: formData.external_config.date_format || null,
+        charge_keywords: formData.external_config.charge_keywords
+          ? formData.external_config.charge_keywords.split(',').map((s) => s.trim()).filter(Boolean)
+          : [],
         column_mapping: columnMappingToApi(formData.external_config.column_mapping),
       },
       internal_config: {
         config_type: 'internal',
         name: formData.internal_config.name,
-        filename_prefix: formData.internal_config.filename_prefix || null,
         expected_filetypes: formData.internal_config.expected_filetypes,
         header_row_config: {
           xlsx: formData.internal_config.header_row_xlsx,
@@ -305,7 +347,10 @@ export function GatewaysPage() {
           csv: formData.internal_config.header_row_csv,
         },
         end_of_data_signal: formData.internal_config.end_of_data_signal || null,
-        date_format_id: formData.internal_config.date_format_id,
+        date_format: formData.internal_config.date_format || null,
+        charge_keywords: formData.internal_config.charge_keywords
+          ? formData.internal_config.charge_keywords.split(',').map((s) => s.trim()).filter(Boolean)
+          : [],
         column_mapping: columnMappingToApi(formData.internal_config.column_mapping),
       },
     };
@@ -315,6 +360,14 @@ export function GatewaysPage() {
     // Validate required fields
     if (!formData.display_name) {
       toast.error('Display name is required');
+      return;
+    }
+    if (!formData.country.trim()) {
+      toast.error('Country is required');
+      return;
+    }
+    if (!formData.currency_code.trim()) {
+      toast.error('Currency code is required');
       return;
     }
     if (!formData.external_config.name) {
@@ -410,28 +463,30 @@ export function GatewaysPage() {
     setFormData({
       display_name: gateway.display_name,
       description: gateway.description || '',
-      country_id: gateway.country?.id || null,
-      currency_id: gateway.currency?.id || null,
+      country: gateway.country || '',
+      currency_code: gateway.currency_code || '',
       external_config: {
         name: extConfig?.name || '',
-        filename_prefix: extConfig?.filename_prefix || '',
         expected_filetypes: extConfig?.expected_filetypes || [...DEFAULT_FILETYPES],
         header_row_xlsx: extConfig?.header_row_config?.xlsx ?? 0,
         header_row_xls: extConfig?.header_row_config?.xls ?? 0,
         header_row_csv: extConfig?.header_row_config?.csv ?? 0,
         end_of_data_signal: extConfig?.end_of_data_signal || '',
-        date_format_id: extConfig?.date_format?.id || null,
+        date_format: extConfig?.date_format || '',
+        date_example: '',
+        charge_keywords: extConfig?.charge_keywords?.join(', ') || '',
         column_mapping: columnMappingToForm(extConfig?.column_mapping),
       },
       internal_config: {
         name: intConfig?.name || '',
-        filename_prefix: intConfig?.filename_prefix || '',
         expected_filetypes: intConfig?.expected_filetypes || [...DEFAULT_FILETYPES],
         header_row_xlsx: intConfig?.header_row_config?.xlsx ?? 0,
         header_row_xls: intConfig?.header_row_config?.xls ?? 0,
         header_row_csv: intConfig?.header_row_config?.csv ?? 0,
         end_of_data_signal: intConfig?.end_of_data_signal || '',
-        date_format_id: intConfig?.date_format?.id || null,
+        date_format: intConfig?.date_format || '',
+        date_example: '',
+        charge_keywords: intConfig?.charge_keywords?.join(', ') || '',
         column_mapping: columnMappingToForm(intConfig?.column_mapping),
       },
     });
@@ -526,10 +581,6 @@ export function GatewaysPage() {
     );
   };
 
-  // Get currencies for selected country
-  const selectedCountry = allSettings?.countries.find((c) => c.id === formData.country_id);
-  const availableCurrencies = selectedCountry?.currencies || [];
-
   // File config section component
   const renderFileConfigSection = (
     configType: 'external_config' | 'internal_config',
@@ -560,35 +611,22 @@ export function GatewaysPage() {
 
         {expanded && (
           <div className="space-y-4 p-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Config Name <span className="text-red-500">*</span>
-                </label>
-                <Input
-                  value={config.name}
-                  onChange={(e) =>
-                    updateFileConfig(configType, 'name', e.target.value.toLowerCase())
-                  }
-                  placeholder={
-                    configType === 'external_config' ? 'e.g., equity' : 'e.g., workpay_equity'
-                  }
-                  helperText={
-                    configType === 'internal_config' ? "Must start with 'workpay_'" : 'Lowercase'
-                  }
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Filename Prefix
-                </label>
-                <Input
-                  value={config.filename_prefix}
-                  onChange={(e) => updateFileConfig(configType, 'filename_prefix', e.target.value)}
-                  placeholder="e.g., Account_Statement"
-                  helperText="Prefix to match uploaded files"
-                />
-              </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Config Name <span className="text-red-500">*</span>
+              </label>
+              <Input
+                value={config.name}
+                onChange={(e) =>
+                  updateFileConfig(configType, 'name', e.target.value.toLowerCase())
+                }
+                placeholder={
+                  configType === 'external_config' ? 'e.g., equity' : 'e.g., workpay_equity'
+                }
+                helperText={
+                  configType === 'internal_config' ? "Must start with 'workpay_'" : 'Lowercase'
+                }
+              />
             </div>
 
             <div>
@@ -654,25 +692,28 @@ export function GatewaysPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Date Format</label>
-                <Select
-                  value={config.date_format_id?.toString() || ''}
-                  onChange={(e) =>
-                    updateFileConfig(
-                      configType,
-                      'date_format_id',
-                      e.target.value ? parseInt(e.target.value) : null
-                    )
+                <Input
+                  value={config.date_example}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    updateFileConfig(configType, 'date_example', value);
+                    const inferred = inferDateFormat(value);
+                    updateFileConfig(configType, 'date_format', inferred?.format || '');
+                  }}
+                  placeholder="e.g., 08/02/2026 or 2026-02-08"
+                  helperText={
+                    config.date_example
+                      ? inferDateFormat(config.date_example)
+                        ? `Detected: ${inferDateFormat(config.date_example)!.label} → ${inferDateFormat(config.date_example)!.format}`
+                        : 'Could not detect format — use DD/MM/YYYY, MM/DD/YYYY, or YYYY-MM-DD'
+                      : 'Enter an example date from your file'
                   }
-                  options={[
-                    { value: '', label: 'Select date format...' },
-                    ...(allSettings?.date_formats
-                      .filter((f) => f.is_active)
-                      .map((f) => ({
-                        value: f.id.toString(),
-                        label: `${f.format_string} (${f.example})`,
-                      })) || []),
-                  ]}
                 />
+                {config.date_format && !config.date_example && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Current: <code className="rounded bg-gray-100 px-1">{config.date_format}</code>
+                  </p>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
@@ -687,6 +728,20 @@ export function GatewaysPage() {
                   helperText="Text that signals end of transactions"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Charge Keywords
+              </label>
+              <Input
+                value={config.charge_keywords}
+                onChange={(e) =>
+                  updateFileConfig(configType, 'charge_keywords', e.target.value)
+                }
+                placeholder="e.g., FEE, CHARGE, COMMISSION, LEDGER FEE"
+                helperText="Comma-separated keywords to identify bank charges in the Reference or Details columns"
+              />
             </div>
 
             {/* Column Mapping Section */}
@@ -789,7 +844,7 @@ export function GatewaysPage() {
         </div>
       )}
 
-      {/* Unified Gateways Table */}
+      {/* Gateways Table */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle>Payment Gateways</CardTitle>
@@ -804,14 +859,15 @@ export function GatewaysPage() {
                 <TableHead>Gateway</TableHead>
                 <TableHead>External Config</TableHead>
                 <TableHead>Internal Config</TableHead>
-                <TableHead>Location</TableHead>
+                <TableHead>Country</TableHead>
+                <TableHead>Currency</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {pagination.paginatedItems.length === 0 ? (
-                <TableEmpty message="No gateways configured" colSpan={6} />
+                <TableEmpty message="No gateways configured" colSpan={7} />
               ) : (
                 pagination.paginatedItems.map((gateway) => (
                   <TableRow key={gateway.id}>
@@ -838,9 +894,13 @@ export function GatewaysPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="text-sm">
-                        <div>{gateway.country?.name || '-'}</div>
-                        <div className="text-gray-500">{gateway.currency?.code || '-'}</div>
+                      <div className="text-sm text-gray-700">
+                        {gateway.country || '-'}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm text-gray-700">
+                        {gateway.currency_code || '-'}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -912,51 +972,27 @@ export function GatewaysPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Country</label>
-              <Select
-                value={formData.country_id?.toString() || ''}
-                onChange={(e) => {
-                  const countryId = e.target.value ? parseInt(e.target.value) : null;
-                  setFormData({
-                    ...formData,
-                    country_id: countryId,
-                    currency_id: null, // Reset currency when country changes
-                  });
-                }}
-                options={[
-                  { value: '', label: 'Select country...' },
-                  ...(allSettings?.countries
-                    .filter((c) => c.is_active)
-                    .map((c) => ({
-                      value: c.id.toString(),
-                      label: `${c.name} (${c.code})`,
-                    })) || []),
-                ]}
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Country <span className="text-red-500">*</span>
+              </label>
+              <Input
+                value={formData.country}
+                onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                placeholder="e.g., Kenya"
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Currency</label>
-              <Select
-                value={formData.currency_id?.toString() || ''}
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Currency Code <span className="text-red-500">*</span>
+              </label>
+              <Input
+                value={formData.currency_code}
                 onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    currency_id: e.target.value ? parseInt(e.target.value) : null,
-                  })
+                  setFormData({ ...formData, currency_code: e.target.value.toUpperCase() })
                 }
-                disabled={!formData.country_id}
-                options={[
-                  {
-                    value: '',
-                    label: formData.country_id ? 'Select currency...' : 'Select country first',
-                  },
-                  ...availableCurrencies
-                    .filter((c) => c.is_active)
-                    .map((c) => ({
-                      value: c.id.toString(),
-                      label: `${c.code} - ${c.name}`,
-                    })),
-                ]}
+                placeholder="e.g., KES"
+                maxLength={3}
+                helperText="3-letter code (e.g., KES, USD, EUR)"
               />
             </div>
           </div>
@@ -1024,51 +1060,27 @@ export function GatewaysPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Country</label>
-              <Select
-                value={formData.country_id?.toString() || ''}
-                onChange={(e) => {
-                  const countryId = e.target.value ? parseInt(e.target.value) : null;
-                  setFormData({
-                    ...formData,
-                    country_id: countryId,
-                    currency_id: null,
-                  });
-                }}
-                options={[
-                  { value: '', label: 'Select country...' },
-                  ...(allSettings?.countries
-                    .filter((c) => c.is_active)
-                    .map((c) => ({
-                      value: c.id.toString(),
-                      label: `${c.name} (${c.code})`,
-                    })) || []),
-                ]}
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Country <span className="text-red-500">*</span>
+              </label>
+              <Input
+                value={formData.country}
+                onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                placeholder="e.g., Kenya"
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Currency</label>
-              <Select
-                value={formData.currency_id?.toString() || ''}
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Currency Code <span className="text-red-500">*</span>
+              </label>
+              <Input
+                value={formData.currency_code}
                 onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    currency_id: e.target.value ? parseInt(e.target.value) : null,
-                  })
+                  setFormData({ ...formData, currency_code: e.target.value.toUpperCase() })
                 }
-                disabled={!formData.country_id}
-                options={[
-                  {
-                    value: '',
-                    label: formData.country_id ? 'Select currency...' : 'Select country first',
-                  },
-                  ...availableCurrencies
-                    .filter((c) => c.is_active)
-                    .map((c) => ({
-                      value: c.id.toString(),
-                      label: `${c.code} - ${c.name}`,
-                    })),
-                ]}
+                placeholder="e.g., KES"
+                maxLength={3}
+                helperText="3-letter code (e.g., KES, USD, EUR)"
               />
             </div>
           </div>
@@ -1120,7 +1132,7 @@ export function GatewaysPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium capitalize">{request.request_type}</span>
                       <code className="rounded bg-gray-100 px-2 py-0.5 text-sm">
-                        {request.gateway_name}
+                        {request.gateway_display_name}
                       </code>
                     </div>
                     <Badge variant={STATUS_VARIANTS[request.status as ChangeRequestStatus]}>

@@ -1,7 +1,7 @@
 """
 Security utilities for authentication.
 
-Provides password hashing, verification, JWT token operations, and OTP generation.
+Provides password hashing, verification, JWT token operations, and secure password generation.
 """
 import secrets
 import string
@@ -122,39 +122,9 @@ def create_refresh_token(
     )
 
 
-def create_pre_auth_token(user_id: int, username: str) -> str:
-    """
-    Create a short-lived pre-auth token issued after credentials verification.
-
-    This token can ONLY be used for OTP verification and resend endpoints.
-    It is NOT a valid access token.
-
-    Args:
-        user_id: The user's database ID.
-        username: The user's username.
-
-    Returns:
-        Encoded JWT token string (5-minute expiry).
-    """
-    expire = datetime.now(timezone.utc) + timedelta(minutes=5)
-
-    payload = {
-        "sub": str(user_id),
-        "username": username,
-        "exp": expire,
-        "type": "pre_auth"
-    }
-
-    return jwt.encode(
-        payload,
-        auth_settings.jwt_secret_key,
-        algorithm=auth_settings.jwt_algorithm
-    )
-
-
 def create_reset_token(user_id: int, email: str) -> str:
     """
-    Create a short-lived token for password reset after OTP verification.
+    Create a short-lived token for password reset.
 
     Args:
         user_id: The user's database ID.
@@ -198,51 +168,6 @@ def decode_token(token: str) -> Optional[dict[str, Any]]:
         return payload
     except InvalidTokenError:
         return None
-
-
-def generate_otp() -> str:
-    """
-    Generate a cryptographically secure 6-digit OTP code.
-
-    Returns:
-        6-digit string (zero-padded).
-    """
-    return f"{secrets.randbelow(1000000):06d}"
-
-
-def hash_otp(otp_code: str) -> str:
-    """
-    Hash an OTP code using bcrypt for secure storage.
-
-    Args:
-        otp_code: The plain 6-digit OTP.
-
-    Returns:
-        Bcrypt hash of the OTP.
-    """
-    otp_bytes = otp_code.encode('utf-8')
-    salt = bcrypt.gensalt(rounds=10)  # Slightly fewer rounds for OTPs (short-lived)
-    hashed = bcrypt.hashpw(otp_bytes, salt)
-    return hashed.decode('utf-8')
-
-
-def verify_otp(plain_otp: str, hashed_otp: str) -> bool:
-    """
-    Verify an OTP code against its hash.
-
-    Args:
-        plain_otp: The plain OTP code to verify.
-        hashed_otp: The bcrypt hash to check against.
-
-    Returns:
-        True if OTP matches.
-    """
-    try:
-        otp_bytes = plain_otp.encode('utf-8')
-        hashed_bytes = hashed_otp.encode('utf-8')
-        return bcrypt.checkpw(otp_bytes, hashed_bytes)
-    except (ValueError, TypeError):
-        return False
 
 
 def generate_secure_password(length: int = 12) -> str:

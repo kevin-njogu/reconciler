@@ -10,9 +10,6 @@ venv/
 .venv/
 env/
 
-# Frontend (built separately)
-frontend/
-
 # IDE
 .vscode/
 .idea/
@@ -24,12 +21,7 @@ frontend/
 
 # Documentation
 *.md
-docs/
 LICENSE
-
-# Docker
-docker-compose.yml
-.dockerignore
 
 # Testing
 .pytest_cache/

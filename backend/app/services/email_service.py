@@ -1,7 +1,7 @@
 """
 Async email service using aiosmtplib.
 
-Sends OTP verification, welcome, forgot password, password changed,
+Sends welcome, forgot password, password changed,
 and account locked notification emails using Jinja2 HTML templates.
 """
 import logging
@@ -77,45 +77,19 @@ class EmailService:
         return template.render(**kwargs)
 
     @classmethod
-    async def send_login_otp(
-        cls,
-        to_email: str,
-        otp_code: str,
-        user_name: str,
-        expires_seconds: int,
-    ) -> bool:
-        """Send login OTP verification email."""
-        html = cls._render_template(
-            "otp_verification.html",
-            user_name=user_name,
-            otp_code=otp_code,
-            expires_minutes=max(1, expires_seconds // 60),
-            expires_seconds=expires_seconds,
-        )
-        return await cls._send_email(
-            to_email,
-            "Your Login Verification Code",
-            html,
-        )
-
-    @classmethod
     async def send_welcome_email(
         cls,
         to_email: str,
         username: str,
         password: str,
-        otp_code: str,
         user_name: str,
-        expires_seconds: int,
     ) -> bool:
-        """Send welcome email with credentials and OTP."""
+        """Send welcome email with credentials."""
         html = cls._render_template(
             "welcome_user.html",
             user_name=user_name,
             username=username,
             password=password,
-            otp_code=otp_code,
-            expires_minutes=max(1, expires_seconds // 60),
         )
         return await cls._send_email(
             to_email,
@@ -124,23 +98,21 @@ class EmailService:
         )
 
     @classmethod
-    async def send_forgot_password_otp(
+    async def send_forgot_password_email(
         cls,
         to_email: str,
-        otp_code: str,
+        reset_token: str,
         user_name: str,
-        expires_seconds: int,
     ) -> bool:
-        """Send forgot password OTP email."""
+        """Send forgot password email with reset token."""
         html = cls._render_template(
             "forgot_password.html",
             user_name=user_name,
-            otp_code=otp_code,
-            expires_minutes=max(1, expires_seconds // 60),
+            reset_token=reset_token,
         )
         return await cls._send_email(
             to_email,
-            "Password Reset Verification Code",
+            "Password Reset Request",
             html,
         )
 

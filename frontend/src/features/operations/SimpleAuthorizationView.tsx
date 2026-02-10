@@ -305,7 +305,6 @@ function SimpleAuthorizationPanel({
 
 interface SimpleAuthorizationViewProps {
   groups: Array<{
-    batch_id: string;
     gateway: string;
     transactions: UnreconciledTransaction[];
   }>;

@@ -1,8 +1,7 @@
 """
 Pydantic models for authentication and user management.
 
-Includes models for 2-step login (credentials + OTP), forgot password,
-user management, and audit logging.
+Includes models for login, forgot password, user management, and audit logging.
 """
 from datetime import datetime
 from typing import Optional, List, Any, Literal
@@ -27,10 +26,10 @@ class UserStatusEnum(str, Enum):
     DEACTIVATED = "deactivated"
 
 
-# --- Authentication Request/Response Models (2-Step Login) ---
+# --- Authentication Request/Response Models ---
 
 class LoginRequest(BaseModel):
-    """Step 1: Login request with credentials."""
+    """Login request with credentials."""
     username: str
     password: str
 
@@ -42,31 +41,8 @@ class LoginRequest(BaseModel):
         return v.strip()
 
 
-class LoginStep1Response(BaseModel):
-    """Step 1 response: pre-auth token + OTP metadata."""
-    pre_auth_token: str
-    otp_sent: bool
-    otp_expires_in: int  # seconds
-    otp_source: str  # "email" or "welcome_email"
-    resend_available_in: int  # seconds until resend is allowed
-    message: str
-
-
-class OTPVerifyRequest(BaseModel):
-    """Step 2: Verify OTP code."""
-    pre_auth_token: str
-    otp_code: str
-
-    @field_validator('otp_code')
-    @classmethod
-    def otp_code_valid(cls, v: str) -> str:
-        if not v or len(v) != 6 or not v.isdigit():
-            raise ValueError('OTP code must be exactly 6 digits')
-        return v
-
-
-class OTPVerifyResponse(BaseModel):
-    """Step 2 response: full authentication tokens."""
+class LoginResponse(BaseModel):
+    """Login response with authentication tokens."""
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
@@ -75,48 +51,16 @@ class OTPVerifyResponse(BaseModel):
     user: "UserResponse"
 
 
-class OTPResendRequest(BaseModel):
-    """Request to resend OTP."""
-    pre_auth_token: str
-
-
-class OTPResendResponse(BaseModel):
-    """Resend OTP response."""
-    otp_sent: bool
-    otp_expires_in: int  # seconds
-    resend_available_in: int  # seconds
-    message: str
-
-
 # --- Forgot Password Models ---
 
 class ForgotPasswordRequest(BaseModel):
-    """Request password reset OTP."""
+    """Request password reset."""
     email: EmailStr
 
 
 class ForgotPasswordResponse(BaseModel):
     """Forgot password response (intentionally vague for security)."""
     message: str
-
-
-class VerifyResetOTPRequest(BaseModel):
-    """Verify the password reset OTP."""
-    email: EmailStr
-    otp_code: str
-
-    @field_validator('otp_code')
-    @classmethod
-    def otp_code_valid(cls, v: str) -> str:
-        if not v or len(v) != 6 or not v.isdigit():
-            raise ValueError('OTP code must be exactly 6 digits')
-        return v
-
-
-class VerifyResetOTPResponse(BaseModel):
-    """Response with reset token after OTP verification."""
-    reset_token: str
-    expires_in: int  # seconds
 
 
 class ResetPasswordRequest(BaseModel):
@@ -181,7 +125,6 @@ class SuperAdminCreateRequest(BaseModel):
     last_name: str
     email: EmailStr
     password: str
-    secret_key: str
 
     @field_validator('first_name')
     @classmethod
@@ -348,5 +291,5 @@ class AuditLogListResponse(BaseModel):
 
 
 # Update forward references
-OTPVerifyResponse.model_rebuild()
+LoginResponse.model_rebuild()
 UserCreateResponse.model_rebuild()

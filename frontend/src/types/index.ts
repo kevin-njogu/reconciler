@@ -19,45 +19,20 @@ export interface User {
   password_changed_at?: string;
 }
 
-// --- 2-Step Login Types ---
+// --- Login Types ---
 
 export interface LoginRequest {
   username: string;
   password: string;
 }
 
-export interface LoginStep1Response {
-  pre_auth_token: string;
-  otp_sent: boolean;
-  otp_expires_in: number;
-  otp_source: 'email' | 'welcome_email';
-  resend_available_in: number;
-  message: string;
-}
-
-export interface OTPVerifyRequest {
-  pre_auth_token: string;
-  otp_code: string;
-}
-
-export interface OTPVerifyResponse {
+export interface LoginResponse {
   access_token: string;
   refresh_token: string;
   token_type: string;
   expires_in: number;
   must_change_password: boolean;
   user: User;
-}
-
-export interface OTPResendRequest {
-  pre_auth_token: string;
-}
-
-export interface OTPResendResponse {
-  otp_sent: boolean;
-  otp_expires_in: number;
-  resend_available_in: number;
-  message: string;
 }
 
 // --- Forgot Password Types ---
@@ -68,16 +43,6 @@ export interface ForgotPasswordRequest {
 
 export interface ForgotPasswordResponse {
   message: string;
-}
-
-export interface VerifyResetOTPRequest {
-  email: string;
-  otp_code: string;
-}
-
-export interface VerifyResetOTPResponse {
-  reset_token: string;
-  expires_in: number;
 }
 
 export interface ResetPasswordRequest {
@@ -130,97 +95,22 @@ export interface SuperAdminCreateRequest {
   last_name: string;
   email: string;
   password: string;
-  secret_key: string;
 }
 
-// Batch Types
-export type BatchStatus = 'pending' | 'completed';
-export type DeleteRequestStatus = 'pending' | 'approved' | 'rejected';
-
-export interface Batch {
+// Reconciliation Run Types (replaces Batch)
+export interface ReconciliationRun {
   id: number;
-  batch_id: string;
-  status: BatchStatus;
-  description?: string;
-  created_at: string;
-  closed_at?: string;
-  created_by?: string;
-  created_by_id?: number;
-  file_count?: number;
-  transaction_count?: number;
-  unreconciled_count?: number;
-}
-
-export interface BatchCreateResponse {
-  batch_id: string;
-  batch_db_id: number;
-  status: BatchStatus;
-  description?: string;
-  created_by: string;
-  created_at: string;
-  message: string;
-}
-
-export interface BatchCloseResponse {
-  batch_id: string;
-  status: BatchStatus;
-  closed_at: string;
-  message: string;
-}
-
-export interface BatchDeleteRequestCreate {
-  reason?: string;
-}
-
-export interface BatchDeleteRequest {
-  id: number;
-  batch_id: string;
-  status: DeleteRequestStatus;
-  reason?: string;
-  requested_by?: string;
-  requested_by_id: number;
-  reviewed_by?: string;
-  reviewed_at?: string;
-  rejection_reason?: string;
-  created_at: string;
-}
-
-export interface BatchDeleteRequestResponse {
-  id: number;
-  batch_id: string;
-  status: string;
-  reason?: string;
-  requested_by: string;
-  created_at: string;
-  message: string;
-}
-
-export interface BatchDeleteRequestListResponse {
-  count: number;
-  requests: BatchDeleteRequest[];
-}
-
-export interface ReviewDeleteRequestBody {
-  approved: boolean;
-  rejection_reason?: string;
-}
-
-export interface BatchFile {
-  id: number;
-  filename: string;
-  original_filename: string;
+  run_id: string;
   gateway: string;
-  file_size?: number;
-  content_type?: string;
-  uploaded_at: string;
-  uploaded_by?: string;
-}
-
-export interface BatchFilesResponse {
-  batch_id: string;
-  batch_status: BatchStatus;
-  file_count: number;
-  files: BatchFile[];
+  status: string;
+  total_external: number;
+  total_internal: number;
+  matched: number;
+  unmatched_external: number;
+  unmatched_internal: number;
+  carry_forward_matched: number;
+  created_by?: string;
+  created_at: string;
 }
 
 export interface PaginationInfo {
@@ -232,90 +122,104 @@ export interface PaginationInfo {
   has_previous: boolean;
 }
 
-export interface BatchListResponse {
-  batches: Batch[];
+export interface RunListResponse {
+  runs: ReconciliationRun[];
   pagination: PaginationInfo;
 }
 
+// Uploaded File Types (replaces BatchFile)
+export interface UploadedFile {
+  id: number;
+  filename: string;
+  original_filename: string;
+  gateway: string;
+  gateway_type: string;
+  file_size?: number;
+  content_type?: string;
+  uploaded_by?: string;
+  uploaded_at: string;
+  is_processed: boolean;
+}
+
+// =============================================================================
 // Gateway Types
-export type GatewayType = 'external' | 'internal';
+// =============================================================================
+
+export type FileConfigType = 'external' | 'internal';
 export type ChangeRequestType = 'create' | 'update' | 'delete' | 'activate' | 'permanent_delete';
 export type ChangeRequestStatus = 'pending' | 'approved' | 'rejected';
 
-export interface GatewayConfig {
+export interface GatewayFileConfig {
   id: number;
+  gateway_id: number;
+  config_type: FileConfigType;
   name: string;
-  gateway_type: GatewayType;
-  display_name: string;
-  country: string;
-  currency: string;
-  date_format: string;
+  expected_filetypes: string[];
+  header_row_config: Record<string, number>;
+  end_of_data_signal?: string;
+  date_format?: string;
   charge_keywords: string[];
+  column_mapping?: Record<string, string[]>;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
 }
 
-export interface GatewayCreateRequest {
-  name: string;
-  gateway_type: GatewayType;
+export interface UnifiedGateway {
+  id: number;
   display_name: string;
-  country: string;
-  currency: string;
-  date_format?: string;
-  charge_keywords?: string[];
+  description?: string;
+  country?: string;
+  currency_code?: string;
+  is_active: boolean;
+  external_config?: GatewayFileConfig;
+  internal_config?: GatewayFileConfig;
+  created_at?: string;
+  updated_at?: string;
 }
 
-export interface GatewayUpdateRequest {
-  display_name?: string;
-  country?: string;
-  currency?: string;
+export interface GatewayFileConfigCreate {
+  config_type: FileConfigType;
+  name: string;
+  expected_filetypes?: string[];
+  header_row_config?: Record<string, number>;
+  end_of_data_signal?: string;
   date_format?: string;
   charge_keywords?: string[];
+  column_mapping?: Record<string, string[]>;
+}
+
+export interface GatewayFileConfigUpdate {
+  name?: string;
+  expected_filetypes?: string[];
+  header_row_config?: Record<string, number>;
+  end_of_data_signal?: string;
+  date_format?: string;
+  charge_keywords?: string[];
+  column_mapping?: Record<string, string[]>;
   is_active?: boolean;
 }
 
-// Gateway Options Types (for dropdowns)
-export interface CountryOption {
-  code: string;
-  name: string;
-}
-
-export interface CurrencyOption {
-  code: string;
-  name: string;
-}
-
-export interface DateFormatOption {
-  format: string;
-  example: string;
-}
-
-export interface GatewayOptions {
-  countries: CountryOption[];
-  currencies: CurrencyOption[];
-  date_formats: DateFormatOption[];
-}
-
-export interface GatewayInfo {
-  external_gateways: GatewayConfig[];
-  internal_gateways: GatewayConfig[];
-  upload_mappings: Record<string, string[]>;
-}
-
-export interface GatewayListItem {
-  gateway: string;
+export interface UnifiedGatewayCreate {
   display_name: string;
-  upload_name: string;
-  internal_upload_name: string;
-  charge_keywords: string[];
+  description?: string;
+  country?: string;
+  currency_code?: string;
+  external_config: GatewayFileConfigCreate;
+  internal_config: GatewayFileConfigCreate;
 }
 
-// Gateway Change Request Types
-export interface GatewayChangeRequestCreate {
-  request_type: ChangeRequestType;
-  gateway_name: string;
-  proposed_changes: Record<string, unknown>;
+export interface UnifiedGatewayUpdate {
+  display_name?: string;
+  description?: string;
+  country?: string;
+  currency_code?: string;
+  external_config?: GatewayFileConfigUpdate;
+  internal_config?: GatewayFileConfigUpdate;
+  is_active?: boolean;
+}
+
+export interface UnifiedGatewayListResponse {
+  gateways: UnifiedGateway[];
+  total_count: number;
 }
 
 export interface GatewayChangeRequestReview {
@@ -327,8 +231,8 @@ export interface GatewayChangeRequest {
   id: number;
   request_type: ChangeRequestType;
   status: ChangeRequestStatus;
-  gateway_id?: number;
-  gateway_name: string;
+  unified_gateway_id?: number;
+  gateway_display_name: string;
   proposed_changes: Record<string, unknown>;
   requested_by_id: number;
   requested_by_name?: string;
@@ -337,149 +241,28 @@ export interface GatewayChangeRequest {
   reviewed_by_name?: string;
   reviewed_at?: string;
   rejection_reason?: string;
+}
+
+export interface GatewayChangeRequestCreate {
+  request_type: ChangeRequestType;
+  display_name: string;
+  proposed_changes: Record<string, unknown>;
 }
 
 export interface GatewayChangeRequestListResponse {
   count: number;
   requests: GatewayChangeRequest[];
-}
-
-// =============================================================================
-// Unified Gateway Types (New)
-// =============================================================================
-
-export type FileConfigType = 'external' | 'internal';
-
-export interface GatewayFileConfig {
-  id: number;
-  gateway_id: number;
-  config_type: FileConfigType;
-  name: string;
-  filename_prefix?: string;
-  expected_filetypes: string[];
-  header_row_config: Record<string, number>;
-  end_of_data_signal?: string;
-  date_format?: {
-    id: number;
-    format_string: string;
-    example: string;
-  };
-  charge_keywords: string[];
-  column_mapping?: Record<string, string[]>;
-  is_active: boolean;
-}
-
-export interface UnifiedGateway {
-  id: number;
-  display_name: string;
-  description?: string;
-  country?: {
-    id: number;
-    code: string;
-    name: string;
-  };
-  currency?: {
-    id: number;
-    code: string;
-    name: string;
-    symbol?: string;
-  };
-  is_active: boolean;
-  external_config?: GatewayFileConfig;
-  internal_config?: GatewayFileConfig;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface GatewayFileConfigCreate {
-  config_type: FileConfigType;
-  name: string;
-  filename_prefix?: string;
-  expected_filetypes?: string[];
-  header_row_config?: Record<string, number>;
-  end_of_data_signal?: string;
-  date_format_id?: number;
-  charge_keywords?: string[];
-  column_mapping?: Record<string, string[]>;
-}
-
-export interface GatewayFileConfigUpdate {
-  name?: string;
-  filename_prefix?: string;
-  expected_filetypes?: string[];
-  header_row_config?: Record<string, number>;
-  end_of_data_signal?: string;
-  date_format_id?: number;
-  charge_keywords?: string[];
-  column_mapping?: Record<string, string[]>;
-  is_active?: boolean;
-}
-
-export interface UnifiedGatewayCreate {
-  display_name: string;
-  description?: string;
-  country_id?: number;
-  currency_id?: number;
-  external_config: GatewayFileConfigCreate;
-  internal_config: GatewayFileConfigCreate;
-}
-
-export interface UnifiedGatewayUpdate {
-  display_name?: string;
-  description?: string;
-  country_id?: number;
-  currency_id?: number;
-  external_config?: GatewayFileConfigUpdate;
-  internal_config?: GatewayFileConfigUpdate;
-  is_active?: boolean;
-}
-
-export interface UnifiedGatewayListResponse {
-  gateways: UnifiedGateway[];
-  total_count: number;
-}
-
-export interface UnifiedGatewayChangeRequest {
-  id: number;
-  request_type: ChangeRequestType;
-  status: ChangeRequestStatus;
-  gateway_id?: number;
-  display_name: string;
-  proposed_changes: Record<string, unknown>;
-  requested_by_id: number;
-  requested_by_name?: string;
-  created_at: string;
-  reviewed_by_id?: number;
-  reviewed_by_name?: string;
-  reviewed_at?: string;
-  rejection_reason?: string;
-}
-
-export interface UnifiedGatewayChangeRequestCreate {
-  request_type: ChangeRequestType;
-  display_name: string;
-  proposed_changes: Record<string, unknown>;
-}
-
-export interface UnifiedGatewayChangeRequestListResponse {
-  count: number;
-  requests: UnifiedGatewayChangeRequest[];
+  page: number;
+  page_size: number;
+  total_pages: number;
 }
 
 // Transaction Types
+export type GatewayType = 'external' | 'internal';
 export type TransactionType = 'deposit' | 'debit' | 'charge' | 'payout' | 'refund';
 export type ReconciliationStatus = 'reconciled' | 'unreconciled';
 export type ReconciliationCategory = 'reconcilable' | 'auto_reconciled' | 'non_reconcilable';
-// Note: GatewayType is already defined above in Gateway Types section
 
-/**
- * Unified transaction model.
- * Uses the unified template format: Date, Reference, Details, Debit, Credit
- *
- * Enhanced discriminators:
- * - gateway_type: 'external' or 'internal'
- * - reconciliation_category: determines reconciliation behavior
- */
 export interface Transaction {
   id: number;
   gateway: string;
@@ -492,7 +275,7 @@ export interface Transaction {
   debit?: number;
   credit?: number;
   reconciliation_status: ReconciliationStatus;
-  batch_id: string;
+  run_id?: string;
   created_at: string;
 }
 
@@ -511,14 +294,13 @@ export interface AvailableGateway {
 }
 
 export interface AvailableGatewaysResponse {
-  batch_id: string;
   available_gateways: AvailableGateway[];
 }
 
-// New reconciliation result format
+// Reconciliation result format
 export interface ReconciliationResult {
   message: string;
-  batch_id: string;
+  run_id: string;
   gateway: string;
   summary: {
     total_external: number;
@@ -528,6 +310,7 @@ export interface ReconciliationResult {
     unmatched_internal: number;
     credits: number;
     charges: number;
+    carry_forward_matched?: number;
   };
   saved: {
     external_records: number;
@@ -536,39 +319,11 @@ export interface ReconciliationResult {
   };
 }
 
-// Legacy types for backwards compatibility
-export interface ReconciliationSummary {
-  batch_id: string;
-  external_gateway: string;
-  internal_gateway: string;
-  total_external_debits: number;
-  total_internal_records: number;
-  matched: number;
-  unmatched_external: number;
-  unmatched_internal: number;
-  total_credits: number;
-  total_charges: number;
-}
-
-export interface ReconciliationSaveResponse {
-  message: string;
-  batch_id: string;
-  external_gateway: string;
-  internal_gateway: string;
-  saved: {
-    credits: number;
-    debits: number;
-    charges: number;
-    internal: number;
-    total: number;
-  };
-}
-
 // File Upload Types
 export interface FileUploadResponse {
   message: string;
+  gateway: string;
   filename: string;
-  batch_id: string;
 }
 
 // API Response Types

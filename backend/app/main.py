@@ -38,22 +38,20 @@ from app.controller import (
     reconcile,
     reports,
     upload,
-    batch_creation,
+    runs,
     gateway_config,
     operations,
     dashboard,
     transactions,
     auth,
     users,
-    settings as settings_controller,
 )
 
 # Import models for table creation (SQLAlchemy needs these imported to create tables)
-from app.sqlModels.batchEntities import Batch, BatchDeleteRequest  # noqa: F401
+from app.sqlModels.runEntities import ReconciliationRun, UploadedFile  # noqa: F401
 from app.sqlModels.transactionEntities import Transaction  # noqa: F401
-from app.sqlModels.gatewayEntities import GatewayConfig, Gateway, GatewayFileConfig, GatewayChangeRequest  # noqa: F401
+from app.sqlModels.gatewayEntities import Gateway, GatewayFileConfig, GatewayChangeRequest  # noqa: F401
 from app.sqlModels.authEntities import User, RefreshToken, AuditLog  # noqa: F401
-from app.sqlModels.settingsEntities import DateFormat, Country, Currency, ReconciliationKeyword, SystemSetting  # noqa: F401
 
 logger = logging.getLogger("app")
 
@@ -161,12 +159,11 @@ app.include_router(users.router)
 app.include_router(upload.router)
 app.include_router(reconcile.router)
 app.include_router(reports.router)
-app.include_router(batch_creation.router)
+app.include_router(runs.router)
 app.include_router(gateway_config.router)
 app.include_router(operations.router)
 app.include_router(dashboard.router)
 app.include_router(transactions.router)
-app.include_router(settings_controller.router)
 
 
 # ============================================================================

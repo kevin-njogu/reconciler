@@ -167,7 +167,7 @@ echo -n "new-value-here" | gcloud secrets versions add database-url --data-file=
 
 ```bash
 # Build the backend image (run from project root)
-docker build -t ${REGION}-docker.pkg.dev/${PROJECT_ID}/recon/recon-api:latest .
+docker build -t ${REGION}-docker.pkg.dev/${PROJECT_ID}/recon/recon-api:latest ./backend
 
 # Push to Artifact Registry
 docker push ${REGION}-docker.pkg.dev/${PROJECT_ID}/recon/recon-api:latest
@@ -506,7 +506,7 @@ gcloud run services describe recon-api --region $REGION
 
 ```bash
 # Rebuild and push
-docker build -t ${REGION}-docker.pkg.dev/${PROJECT_ID}/recon/recon-api:latest .
+docker build -t ${REGION}-docker.pkg.dev/${PROJECT_ID}/recon/recon-api:latest ./backend
 docker push ${REGION}-docker.pkg.dev/${PROJECT_ID}/recon/recon-api:latest
 
 # Run migrations (if schema changed)
@@ -684,11 +684,9 @@ Using the wrong flag will cause an "unrecognized arguments" error.
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Backend Docker image (Python 3.11 + gunicorn + uvicorn) |
+| `backend/Dockerfile` | Backend Docker image (Python 3.11 + gunicorn + uvicorn) |
 | `frontend/Dockerfile` | Frontend Docker image (multi-stage: Node build + nginx) |
 | `frontend/nginx.conf` | Nginx config template (API proxy + SPA routing) |
-| `.dockerignore` | Excludes frontend, .env files, docs from backend image |
-| `.github/workflows/deploy-backend.yml` | CI/CD: backend to Cloud Run |
-| `.github/workflows/deploy-frontend.yml` | CI/CD: frontend to Cloud Run |
-| `alembic/` | Database migration files |
-| `.env.production` | Production env var template (do NOT commit with real values) |
+| `backend/.dockerignore` | Excludes .env files, uploads, logs from backend image |
+| `backend/alembic/` | Database migration files |
+| `backend/.env.production` | Production env var template (do NOT commit with real values) |

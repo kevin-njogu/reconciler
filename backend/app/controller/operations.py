@@ -2,7 +2,7 @@
 Operations Controller.
 
 Handles manual reconciliation and authorization workflows:
-- List unreconciled transactions by batch and gateway
+- List unreconciled transactions by gateway
 - Manual reconciliation by users
 - Authorization by admins
 """
@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from app.database.mysql_configs import get_database
 from app.sqlModels.transactionEntities import (
     Transaction,
+    TransactionType,
     ReconciliationStatus,
     AuthorizationStatus,
 )
@@ -34,6 +35,7 @@ router = APIRouter(prefix='/api/v1/operations', tags=['Operations'])
 # ============================================================================
 
 class ManualReconciliationRequest(BaseModel):
+    transaction_type: str
     note: str
 
 
@@ -59,7 +61,7 @@ def transaction_to_response(txn: Transaction) -> dict:
         "credit": float(txn.credit) if txn.credit else None,
         "reconciliation_status": txn.reconciliation_status,
         "reconciliation_key": txn.reconciliation_key,
-        "batch_id": txn.batch_id,
+        "run_id": txn.run_id,
         "is_manually_reconciled": txn.is_manually_reconciled,
         "manual_recon_note": txn.manual_recon_note,
         "manual_recon_by": txn.manual_recon_by,
@@ -85,13 +87,12 @@ def transaction_to_response(txn: Transaction) -> dict:
 
 @router.get("/unreconciled")
 async def get_unreconciled_transactions(
-    batch_id: str,
     gateway: Optional[str] = None,
     db: Session = Depends(get_database),
     current_user: User = Depends(require_active_user)
 ):
     """
-    Get all unreconciled transactions for a batch, optionally filtered by gateway.
+    Get all unreconciled transactions, optionally filtered by gateway.
 
     This returns transactions that are:
     - Status is 'unreconciled'
@@ -99,7 +100,6 @@ async def get_unreconciled_transactions(
     - NOT already authorized
 
     Args:
-        batch_id: The batch identifier.
         gateway: Optional gateway filter (e.g., 'equity', 'kcb', 'mpesa').
 
     Returns:
@@ -107,7 +107,6 @@ async def get_unreconciled_transactions(
     """
     # Build query
     query = db.query(Transaction).filter(
-        Transaction.batch_id == batch_id,
         Transaction.reconciliation_status == ReconciliationStatus.UNRECONCILED.value,
         # Exclude transactions already pending authorization or authorized
         or_(
@@ -141,9 +140,8 @@ async def get_unreconciled_transactions(
             grouped[gw] = []
         grouped[gw].append(transaction_to_response(txn))
 
-    # Get available gateways for this batch (only those with unreconciled transactions)
+    # Get available gateways (only those with unreconciled transactions)
     gateway_query = db.query(Transaction.gateway).filter(
-        Transaction.batch_id == batch_id,
         Transaction.reconciliation_status == ReconciliationStatus.UNRECONCILED.value,
         # Exclude transactions already pending authorization
         or_(
@@ -154,7 +152,6 @@ async def get_unreconciled_transactions(
     available_gateways = [g[0] for g in gateway_query]
 
     return JSONResponse(content={
-        "batch_id": batch_id,
         "gateway_filter": gateway,
         "available_gateways": available_gateways,
         "total_count": len(transactions),
@@ -164,7 +161,6 @@ async def get_unreconciled_transactions(
 
 @router.get("/pending-authorization")
 async def get_pending_authorization(
-    batch_id: Optional[str] = None,
     gateway: Optional[str] = None,
     db: Session = Depends(get_database),
     current_user: User = Depends(require_admin_only)
@@ -177,7 +173,6 @@ async def get_pending_authorization(
     and are awaiting admin approval.
 
     Args:
-        batch_id: Optional batch filter.
         gateway: Optional gateway filter.
 
     Returns:
@@ -186,9 +181,6 @@ async def get_pending_authorization(
     query = db.query(Transaction).filter(
         Transaction.authorization_status == AuthorizationStatus.PENDING.value
     )
-
-    if batch_id:
-        query = query.filter(Transaction.batch_id == batch_id)
 
     if gateway:
         # Support both full gateway names (e.g., "mpesa_external") and base names (e.g., "mpesa")
@@ -207,17 +199,16 @@ async def get_pending_authorization(
 
     transactions = query.order_by(Transaction.manual_recon_at.desc()).all()
 
-    # Group by batch and gateway
+    # Group by gateway
     grouped = {}
     for txn in transactions:
-        key = f"{txn.batch_id}|{txn.gateway}"
-        if key not in grouped:
-            grouped[key] = {
-                "batch_id": txn.batch_id,
-                "gateway": txn.gateway,
+        gw = txn.gateway
+        if gw not in grouped:
+            grouped[gw] = {
+                "gateway": gw,
                 "transactions": []
             }
-        grouped[key]["transactions"].append(transaction_to_response(txn))
+        grouped[gw]["transactions"].append(transaction_to_response(txn))
 
     return JSONResponse(content={
         "total_count": len(transactions),
@@ -269,7 +260,16 @@ async def manual_reconcile(
             detail="Transaction is already pending authorization"
         )
 
+    # Validate transaction_type
+    valid_types = [t.value for t in TransactionType]
+    if request_body.transaction_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid transaction type. Must be one of: {', '.join(valid_types)}"
+        )
+
     # Update transaction
+    transaction.transaction_type = request_body.transaction_type
     transaction.is_manually_reconciled = "true"
     transaction.manual_recon_note = request_body.note
     transaction.manual_recon_by = current_user.id
@@ -283,9 +283,10 @@ async def manual_reconcile(
         resource_type="transaction",
         resource_id=str(transaction_id),
         details={
-            "batch_id": transaction.batch_id,
+            "run_id": transaction.run_id,
             "gateway": transaction.gateway,
             "transaction_id": transaction.transaction_id,
+            "transaction_type": request_body.transaction_type,
             "note": request_body.note,
         },
         ip_address=request.client.host if request.client else None,
@@ -305,6 +306,7 @@ async def manual_reconcile(
 
 class BulkManualReconciliationRequest(BaseModel):
     transaction_ids: List[int]
+    transaction_type: str
     note: str
 
 
@@ -336,6 +338,14 @@ async def manual_reconcile_bulk(
     if not note or not note.strip():
         raise HTTPException(status_code=400, detail="Reconciliation note is required")
 
+    # Validate transaction_type
+    valid_types = [t.value for t in TransactionType]
+    if request_body.transaction_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid transaction type. Must be one of: {', '.join(valid_types)}"
+        )
+
     # Get eligible transactions (unreconciled and not already pending)
     transactions = db.query(Transaction).filter(
         Transaction.id.in_(transaction_ids),
@@ -355,6 +365,7 @@ async def manual_reconcile_bulk(
     # Update all transactions
     now = datetime.now(ZoneInfo("Africa/Nairobi"))
     for txn in transactions:
+        txn.transaction_type = request_body.transaction_type
         txn.is_manually_reconciled = "true"
         txn.manual_recon_note = note.strip()
         txn.manual_recon_by = current_user.id
@@ -368,6 +379,7 @@ async def manual_reconcile_bulk(
         resource_type="transaction",
         resource_id=f"bulk:{len(transactions)}",
         details={
+            "transaction_type": request_body.transaction_type,
             "note": note.strip(),
             "count": len(transactions),
             "transaction_ids": [t.id for t in transactions],
@@ -449,7 +461,7 @@ async def authorize_transaction(
         resource_type="transaction",
         resource_id=str(transaction_id),
         details={
-            "batch_id": transaction.batch_id,
+            "run_id": transaction.run_id,
             "gateway": transaction.gateway,
             "transaction_id": transaction.transaction_id,
             "action": request_body.action,

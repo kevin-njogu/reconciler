@@ -1,13 +1,13 @@
 services:
   fastapi:
-    build: .
+    build: ./backend
     container_name: fastapi_application
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - ./backend/.env
     environment:
       - TZ=Africa/Nairobi
     volumes:
-      - .:/app
+      - ./backend:/app
     restart: always
