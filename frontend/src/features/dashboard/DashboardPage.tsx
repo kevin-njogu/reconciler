@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   TrendingUp,
   Clock,
-  Receipt,
+  XCircle,
   Building2,
   AlertCircle,
 } from 'lucide-react';
@@ -101,13 +101,25 @@ export function DashboardPage() {
 
             <Card>
               <CardContent className="py-4 flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-orange-100">
-                  <Receipt className="h-5 w-5 text-orange-600" />
+                <div className={cn(
+                  'p-2 rounded-lg',
+                  (summary?.unreconciled_count ?? 0) > 0 ? 'bg-red-100' : 'bg-neutral-100'
+                )}>
+                  <XCircle className={cn(
+                    'h-5 w-5',
+                    (summary?.unreconciled_count ?? 0) > 0 ? 'text-red-600' : 'text-neutral-400'
+                  )} />
                 </div>
                 <div>
-                  <p className="text-xs text-neutral-500">Total Charges</p>
-                  <p className="text-xl font-bold text-neutral-900">
-                    {formatCurrency(summary?.charges_amount ?? 0)}
+                  <p className="text-xs text-neutral-500">Total Unreconciled Items</p>
+                  <p className={cn(
+                    'text-xl font-bold',
+                    (summary?.unreconciled_count ?? 0) > 0 ? 'text-red-600' : 'text-neutral-900'
+                  )}>
+                    {formatNumber(summary?.unreconciled_count ?? 0)}
+                  </p>
+                  <p className="text-xs text-neutral-400">
+                    {formatCurrency(summary?.unreconciled_amount ?? 0)}
                   </p>
                 </div>
               </CardContent>

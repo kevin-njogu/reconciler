@@ -15,10 +15,12 @@ Report Columns:
 - Run ID
 
 Excel Format Sheets:
-- External: External gateway transactions (debits)
-- Internal: Internal gateway transactions (payouts, refunds)
-- Deposits: Credit/deposit transactions (auto-reconciled)
+- Unreconciled External: Unmatched external (bank) debits
+- Unreconciled Internal: Unmatched internal (Workpay) payouts
+- Reconciled External: Matched external (bank) debits
+- Reconciled Internal: Matched internal (Workpay) payouts
 - Charges: Bank charges (auto-reconciled)
+- Deposits: Credit/deposit transactions (auto-reconciled)
 """
 import csv
 import logging
@@ -33,7 +35,7 @@ from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
 from app.reports.output_writer import write_to_excel
-from app.sqlModels.transactionEntities import Transaction, TransactionType
+from app.sqlModels.transactionEntities import Transaction, TransactionType, ReconciliationStatus
 
 logger = logging.getLogger("app.reports")
 
@@ -207,44 +209,57 @@ def download_gateway_report_filtered(
             }
         )
     else:
-        # Multi-sheet Excel report: External, Internal, Deposits, Charges
-        external_txns = []
-        internal_txns = []
-        deposits = []
+        # Multi-sheet Excel report: 6 sheets split by side and reconciliation status
+        unreconciled_external = []
+        unreconciled_internal = []
+        reconciled_external = []
+        reconciled_internal = []
         charges = []
+        deposits = []
 
         for txn in transactions:
             gateway_name = txn.gateway or ""
             txn_type = txn.transaction_type or ""
+            recon_status = txn.reconciliation_status or ""
 
             is_internal = (
                 gateway_name.endswith("_internal") or
                 gateway_name.startswith("workpay_")
             )
+            is_reconciled = recon_status == ReconciliationStatus.RECONCILED.value
 
             if txn_type == TransactionType.CHARGE.value:
                 charges.append(txn)
             elif txn_type == TransactionType.DEPOSIT.value:
                 deposits.append(txn)
             elif is_internal:
-                # Internal: payouts, refunds, and any other internal transactions
-                internal_txns.append(txn)
+                if is_reconciled:
+                    reconciled_internal.append(txn)
+                else:
+                    unreconciled_internal.append(txn)
             else:
-                # External: debits and any other external transactions
-                external_txns.append(txn)
+                if is_reconciled:
+                    reconciled_external.append(txn)
+                else:
+                    unreconciled_external.append(txn)
 
         logger.info(
-            f"Report sheet breakdown: External={len(external_txns)}, "
-            f"Internal={len(internal_txns)}, Deposits={len(deposits)}, "
-            f"Charges={len(charges)}"
+            f"Report sheet breakdown: "
+            f"Unreconciled External={len(unreconciled_external)}, "
+            f"Unreconciled Internal={len(unreconciled_internal)}, "
+            f"Reconciled External={len(reconciled_external)}, "
+            f"Reconciled Internal={len(reconciled_internal)}, "
+            f"Charges={len(charges)}, Deposits={len(deposits)}"
         )
 
-        # Always create all 4 sheets (empty DataFrame if no data for that category)
+        # Always create all 6 sheets (empty DataFrame if no data for that category)
         dataframes = {
-            "External": transactions_to_report_dataframe(external_txns),
-            "Internal": transactions_to_report_dataframe(internal_txns),
-            "Deposits": transactions_to_report_dataframe(deposits),
+            "Unreconciled External": transactions_to_report_dataframe(unreconciled_external),
+            "Unreconciled Internal": transactions_to_report_dataframe(unreconciled_internal),
+            "Reconciled External": transactions_to_report_dataframe(reconciled_external),
+            "Reconciled Internal": transactions_to_report_dataframe(reconciled_internal),
             "Charges": transactions_to_report_dataframe(charges),
+            "Deposits": transactions_to_report_dataframe(deposits),
         }
 
         output = BytesIO()

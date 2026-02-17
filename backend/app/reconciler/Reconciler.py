@@ -501,8 +501,25 @@ class Reconciler:
         df[IS_MANUAL_COLUMN] = None
         return df
 
-    def _generate_reconciliation_key(self, row: pd.Series, use_debit: bool = True) -> str:
-        """Generate reconciliation key for a transaction row."""
+    def _generate_reconciliation_key(
+        self,
+        row: pd.Series,
+        use_debit: bool = True,
+        include_date: bool = False,
+    ) -> str:
+        """
+        Generate reconciliation key for a transaction row.
+
+        For reconcilable transactions (debits/payouts) the key is:
+            {reference}|{amount}|{base_gateway}
+
+        For auto-reconciled transactions (charges/deposits) include_date=True
+        appends the transaction date so that same-reference, same-amount entries
+        on different dates produce distinct keys. This prevents charges and
+        deposits from overlapping statement periods being silently skipped as
+        cross-run duplicates when they are actually new transactions.
+            {reference}|{amount}|{base_gateway}|{YYYYMMDD}
+        """
         reference = row.get(REFERENCE_COLUMN, "")
         debit = row.get(DEBIT_COLUMN, 0) or 0
         credit = row.get(CREDIT_COLUMN, 0) or 0
@@ -514,17 +531,31 @@ class Reconciler:
         else:
             amount = debit if debit > 0 else credit
 
-        return GatewayFile.generate_reconciliation_key(reference, amount, self.gateway)
+        base_key = GatewayFile.generate_reconciliation_key(reference, amount, self.gateway)
+
+        if include_date:
+            date_val = row.get(DATE_COLUMN)
+            if date_val is not None and not pd.isna(date_val):
+                try:
+                    date_str = pd.Timestamp(date_val).strftime("%Y%m%d")
+                except Exception:
+                    date_str = "nodate"
+            else:
+                date_str = "nodate"
+            return f"{base_key}|{date_str}"
+
+        return base_key
 
     def _add_reconciliation_keys(
         self,
         df: pd.DataFrame,
-        use_debit: bool = True
+        use_debit: bool = True,
+        include_date: bool = False,
     ) -> pd.DataFrame:
         """Add reconciliation keys to the dataframe."""
         df = df.copy()
         df[RECONCILIATION_KEY_COLUMN] = df.apply(
-            lambda row: self._generate_reconciliation_key(row, use_debit),
+            lambda row: self._generate_reconciliation_key(row, use_debit, include_date),
             axis=1
         )
         return df
@@ -583,7 +614,7 @@ class Reconciler:
             self.external_file
         )
         self.external_credits = self._add_reconciliation_keys(
-            self.external_credits, use_debit=False
+            self.external_credits, use_debit=False, include_date=True
         )
         self.external_credits = self._deduplicate_keys(self.external_credits)
 
@@ -597,7 +628,7 @@ class Reconciler:
             self.external_file
         )
         self.external_charges = self._add_reconciliation_keys(
-            self.external_charges, use_debit=True
+            self.external_charges, use_debit=True, include_date=True
         )
         self.external_charges = self._deduplicate_keys(self.external_charges)
 

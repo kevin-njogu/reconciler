@@ -177,15 +177,36 @@ class GatewayFile:
         return self.dataframe
 
     def _handle_date_column(self) -> None:
-        """Parse the Date column to datetime (expected format: YYYY-MM-DD)."""
+        """Parse the Date column to datetime, accepting any date format.
+
+        Tries the expected YYYY-MM-DD format first, then falls back to
+        pandas automatic inference for other formats (DD/MM/YYYY, MM-DD-YYYY,
+        Excel serial dates, etc.). Any unparseable dates default to today.
+        """
         if self.dataframe is None:
             raise ValueError("DataFrame not loaded.")
 
-        self.dataframe[DATE_COLUMN] = pd.to_datetime(
+        # Try expected format first
+        parsed = pd.to_datetime(
             self.dataframe[DATE_COLUMN],
             format=TEMPLATE_DATE_FORMAT,
             errors="coerce"
         )
+
+        # For any that failed, try automatic format inference
+        failed_mask = parsed.isna() & self.dataframe[DATE_COLUMN].notna()
+        if failed_mask.any():
+            parsed[failed_mask] = pd.to_datetime(
+                self.dataframe.loc[failed_mask, DATE_COLUMN],
+                dayfirst=True,
+                errors="coerce"
+            )
+
+        # Fill any remaining unparseable dates with today
+        today = pd.Timestamp(date.today())
+        parsed = parsed.fillna(today)
+
+        self.dataframe[DATE_COLUMN] = parsed
 
     def _handle_numeric_columns(self) -> None:
         """Convert Debit and Credit columns to numeric."""
@@ -303,14 +324,15 @@ class GatewayFile:
         """
         Clean amount value for reconciliation key generation.
 
-        Converts to absolute whole number using standard rounding.
+        Converts to absolute whole number by truncating (not rounding).
+        e.g. 5323.92 → "5323", not "5324".
         """
         if pd.isna(amount):
             return "0"
 
         try:
             amount_float = abs(float(amount))
-            return str(round(amount_float))
+            return str(int(amount_float))
         except (ValueError, TypeError):
             return "0"
 

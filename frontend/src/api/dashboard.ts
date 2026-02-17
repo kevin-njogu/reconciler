@@ -13,8 +13,8 @@ export interface GatewayTile {
 export interface DashboardSummary {
   reconciliation_rate: number;
   pending_authorizations: number;
-  charges_count: number;
-  charges_amount: number;
+  unreconciled_count: number;
+  unreconciled_amount: number;
 }
 
 export interface DashboardStats {

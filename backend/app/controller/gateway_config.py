@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import select, or_, func as sa_func
+from sqlalchemy import select, or_, func as sa_func, update
 from starlette.responses import JSONResponse
 
 from app.database.mysql_configs import get_database
@@ -639,7 +639,6 @@ def _apply_gateway_change(change_request: GatewayChangeRequest, db: Session, use
                     detail="Cannot permanently delete an active gateway. Deactivate it first."
                 )
 
-            from sqlalchemy import update
             db.execute(
                 update(GatewayChangeRequest)
                 .where(GatewayChangeRequest.unified_gateway_id == gateway.id)

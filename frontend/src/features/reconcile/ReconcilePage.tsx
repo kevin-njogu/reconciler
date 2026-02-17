@@ -35,7 +35,6 @@ import {
   CardContent,
   Select,
   FileUpload,
-  Alert,
   PageLoading,
   Badge,
   Table,
@@ -396,47 +395,47 @@ export function ReconcilePage() {
                 placeholder="Select gateway"
               />
 
-              {/* Upload Target Toggle */}
+              {/* Statement Type */}
               {selectedBaseGateway && (
                 <div>
                   <label className="mb-2 block text-sm font-medium text-gray-700">
-                    Upload Target
+                    Statement Type
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUploadTarget('external');
-                        setSelectedFile(null);
-                        setValidationResult(null);
-                        setTransformResult(null);
-                      }}
-                      className={`flex items-center justify-center gap-2 rounded-lg border-2 p-2.5 text-sm transition-colors ${
-                        uploadTarget === 'external'
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                      }`}
-                    >
-                      <FileSpreadsheet className="h-4 w-4" />
-                      External
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUploadTarget('internal');
-                        setSelectedFile(null);
-                        setValidationResult(null);
-                        setTransformResult(null);
-                      }}
-                      className={`flex items-center justify-center gap-2 rounded-lg border-2 p-2.5 text-sm transition-colors ${
-                        uploadTarget === 'internal'
-                          ? 'border-purple-500 bg-purple-50 text-purple-700'
-                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                      }`}
-                    >
-                      <FileSpreadsheet className="h-4 w-4" />
-                      Internal
-                    </button>
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={uploadTarget === 'external'}
+                        onChange={() => {
+                          setUploadTarget('external');
+                          setSelectedFile(null);
+                          setValidationResult(null);
+                          setTransformResult(null);
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                      />
+                      <span className="flex items-center gap-1.5 text-sm text-gray-700">
+                        <FileSpreadsheet className="h-4 w-4 text-gray-400" />
+                        External Statement
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={uploadTarget === 'internal'}
+                        onChange={() => {
+                          setUploadTarget('internal');
+                          setSelectedFile(null);
+                          setValidationResult(null);
+                          setTransformResult(null);
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                      />
+                      <span className="flex items-center gap-1.5 text-sm text-gray-700">
+                        <FileSpreadsheet className="h-4 w-4 text-gray-400" />
+                        Internal Statement
+                      </span>
+                    </label>
                   </div>
                 </div>
               )}
@@ -447,31 +446,31 @@ export function ReconcilePage() {
                   <label className="mb-2 block text-sm font-medium text-gray-700">
                     Upload Mode
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleModeChange('template')}
-                      className={`flex items-center justify-center gap-2 rounded-lg border-2 p-2.5 text-sm transition-colors ${
-                        uploadMode === 'template'
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                      }`}
-                    >
-                      <FileText className="h-4 w-4" />
-                      Template
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleModeChange('transform')}
-                      className={`flex items-center justify-center gap-2 rounded-lg border-2 p-2.5 text-sm transition-colors ${
-                        uploadMode === 'transform'
-                          ? 'border-purple-500 bg-purple-50 text-purple-700'
-                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                      }`}
-                    >
-                      <Wand2 className="h-4 w-4" />
-                      Transform
-                    </button>
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={uploadMode === 'template'}
+                        onChange={() => handleModeChange('template')}
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                      />
+                      <span className="flex items-center gap-1.5 text-sm text-gray-700">
+                        <FileText className="h-4 w-4 text-gray-400" />
+                        Upload As Template
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={uploadMode === 'transform'}
+                        onChange={() => handleModeChange('transform')}
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                      />
+                      <span className="flex items-center gap-1.5 text-sm text-gray-700">
+                        <Wand2 className="h-4 w-4 text-gray-400" />
+                        Upload Raw Statement
+                      </span>
+                    </label>
                   </div>
                   <p className="mt-1.5 text-xs text-gray-500">
                     {uploadMode === 'template'

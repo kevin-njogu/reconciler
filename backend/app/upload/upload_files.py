@@ -11,6 +11,8 @@ Uploading the same type replaces the existing file.
 """
 from typing import Optional, List, Tuple, Dict, Any
 from io import BytesIO
+from datetime import datetime
+import uuid
 
 import pandas as pd
 from fastapi import UploadFile
@@ -199,6 +201,36 @@ class FileUpload:
             return filename.rsplit('.', 1)[-1].lower()
         return ''
 
+    def _save_archive_copy(
+        self,
+        external_gateway: str,
+        filename_base: str,
+        extension: str,
+        content: bytes,
+    ) -> None:
+        """
+        Save an immutable audit copy of a file to the archive subdirectory.
+
+        Archive path: {external_gateway}/archive/{filename_base}_{YYYYMMDD_HHMMSS}_{uuid8}.{ext}
+
+        This is best-effort — failures are logged as warnings and never propagate
+        to the caller, so a storage issue never blocks a legitimate upload.
+        """
+        try:
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            unique_id = uuid.uuid4().hex[:8]
+            archive_filename = f"{filename_base}_{timestamp}_{unique_id}.{extension}"
+            self.storage.archive_file(external_gateway, archive_filename, content)
+            logger.info(
+                f"Archived copy saved: {external_gateway}/archive/{archive_filename}",
+                extra={"gateway": external_gateway},
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to save archive copy for {filename_base}.{extension}: {e}",
+                extra={"gateway": external_gateway},
+            )
+
     def check_gateway_file_limit(
         self,
         gateway_name: str,
@@ -277,6 +309,9 @@ class FileUpload:
             # Read content if not already read
             if content is None:
                 content = await file.read()
+
+            # Save an immutable audit copy before writing the active file
+            self._save_archive_copy(external_gateway, gateway_name, extension, content)
 
             # Ensure gateway directory exists
             self.storage.ensure_gateway_directory(external_gateway)
@@ -365,6 +400,9 @@ class FileUpload:
         try:
             extension = self._get_file_extension(file.filename)
             raw_filename = f"{gateway_name}_raw.{extension}"
+
+            # Save an immutable audit copy of the raw file
+            self._save_archive_copy(external_gateway, f"{gateway_name}_raw", extension, content)
 
             # Ensure gateway directory exists
             self.storage.ensure_gateway_directory(external_gateway)

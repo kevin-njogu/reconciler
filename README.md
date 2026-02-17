@@ -1,102 +1,100 @@
 # Payment Gateway Reconciliation System
 
-A full-stack financial reconciliation platform built with FastAPI and React. Automates the matching of external bank statements (Equity, KCB, M-Pesa) with internal payment records using composite reconciliation keys.
+A full-stack financial reconciliation platform built with FastAPI and React. Automates the matching of external bank statements (Equity, KCB, M-Pesa) with internal Workpay payment records using composite reconciliation keys.
 
 ## Features
 
-- **Multi-Gateway Support**: Reconcile transactions from multiple payment gateways (Equity Bank, KCB, M-Pesa) with configurable gateway settings
-- **Automated Matching**: Intelligent transaction matching using composite keys (Reference + Amount + Gateway)
-- **Maker-Checker Workflow**: Role-based access control with separation of duties for critical operations
-- **Secure Authentication**: Email + password login with JWT tokens, concurrent session prevention, and account lockout
-- **Password Security**: Configurable password policy, 90-day expiry, password history tracking, and forced change on first login
-- **Forgot Password Flow**: Self-service password reset via email with reset token
-- **Carry-Forward Reconciliation**: Previously unreconciled items are included in future reconciliation runs
-- **Report Generation**: Export reconciliation reports in Excel (XLSX) and CSV formats
-- **Real-time Dashboard**: Monitor reconciliation status and transaction metrics
-- **Manual Reconciliation**: Handle exceptions with approval workflow
-- **Pluggable Storage**: Support for local file storage and Google Cloud Storage
-- **Background Email Delivery**: All emails (welcome, notifications) sent via background tasks for instant UI response
-- **Structured Logging**: JSON or text logging with correlation IDs for request tracing
-- **Security Headers**: CSP, HSTS, rate limiting, and OWASP-recommended headers
+- **Multi-Gateway Support** — Reconcile transactions from multiple payment gateways with configurable per-gateway settings
+- **Automated Matching** — Intelligent transaction matching using composite keys (`Reference|Amount|Gateway`)
+- **Carry-Forward Reconciliation** — Previously unreconciled items participate in future reconciliation runs
+- **Auto-Classification** — Credits auto-reconciled as deposits; charge-keyword debits auto-reconciled as charges
+- **Maker-Checker Workflow** — Role-based separation of duties for reconciliation and gateway configuration
+- **Manual Reconciliation** — Users can manually reconcile exceptions; admins approve or reject
+- **Report Generation** — Export 6-sheet XLSX or flat CSV reports per gateway with date/run filters
+- **Real-time Dashboard** — Per-gateway match rates, unreconciled counts, and pending approvals
+- **Pluggable Storage** — Local filesystem or Google Cloud Storage for uploaded files
+- **File Archiving** — Every upload creates an immutable audit copy before overwriting
+- **Secure Authentication** — JWT access + refresh tokens, concurrent session prevention, account lockout
+- **Password Security** — Configurable policy, 90-day expiry, password history, forced change on first login
+- **Background Email Delivery** — Welcome, reset, lockout, and change notifications via async SMTP
+- **Structured Logging** — JSON/text logging with correlation IDs, sensitive-data masking, file rotation
+- **Security Headers** — CSP, HSTS, X-Frame-Options, rate limiting on all endpoints
 
 ## Tech Stack
 
-### Backend
-- **Framework**: FastAPI 0.118+
-- **Database**: MySQL 8.0+ with SQLAlchemy ORM
-- **Migrations**: Alembic
-- **Authentication**: JWT (access + refresh tokens)
-- **Email**: aiosmtplib with Jinja2 HTML templates
-- **Data Processing**: Pandas, OpenPyXL
-- **Rate Limiting**: SlowAPI
-- **Request Tracing**: asgi-correlation-id
-
-### Frontend
-- **Framework**: React 19 with TypeScript
-- **Build Tool**: Vite
-- **Styling**: Tailwind CSS
-- **State Management**: Zustand + React Query (TanStack Query)
-- **Routing**: React Router v6
-- **Font**: Inter (Google Fonts)
-
-### Infrastructure
-- **Containerization**: Docker & Docker Compose
-- **Storage**: Local filesystem or Google Cloud Storage
-- **Timezone**: Africa/Nairobi (EAT, UTC+3)
+| Layer | Technology |
+|-------|-----------|
+| Backend | FastAPI, SQLAlchemy, Alembic, Pandas, OpenPyXL |
+| Database | MySQL 8.0+ |
+| Authentication | JWT (HS256), bcrypt, aiosmtplib |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS |
+| State | Zustand (auth), TanStack React Query (server state) |
+| Storage | Local filesystem or Google Cloud Storage |
+| Deployment | Docker, Docker Compose |
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐
-│   React SPA     │────>│   FastAPI        │
-│   (Port 3000)   │     │   (Port 8000)    │
-└─────────────────┘     └────────┬─────────┘
-                                 │
-        ┌────────────────────────┼────────────────────────┐
-        │                        │                        │
-        v                        v                        v
-┌───────────────┐    ┌───────────────────┐    ┌───────────────┐
-│    MySQL      │    │  File Storage     │    │  SMTP Email   │
-│   Database    │    │  (Local/GCS)      │    │  Service      │
-└───────────────┘    └───────────────────┘    └───────────────┘
+┌─────────────────┐         ┌──────────────────────┐
+│   React SPA     │ ──────► │   FastAPI (Port 8000) │
+│   (Port 3000)   │         └──────────┬───────────┘
+└─────────────────┘                    │
+                       ┌───────────────┼───────────────┐
+                       ▼               ▼               ▼
+               ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+               │    MySQL     │ │File Storage  │ │ SMTP Email   │
+               │   Database   │ │(Local / GCS) │ │  Service     │
+               └──────────────┘ └──────────────┘ └──────────────┘
 ```
+
+## User Roles
+
+| Role | Description | Key Capabilities |
+|------|-------------|-----------------|
+| `user` | Maker / Inputter | Upload files, run reconciliation, submit manual recons, submit gateway change requests |
+| `admin` | Checker / Approver | Approve/reject manual reconciliations, approve/reject gateway change requests |
+| `super_admin` | System Administrator | Create and manage user accounts. No access to operational approvals |
 
 ## Project Structure
 
 ```
 .
-├── backend/                    # Backend application
-│   ├── app/                    # FastAPI application code
-│   │   ├── auth/               # Authentication (JWT, password, dependencies)
-│   │   ├── config/             # App settings and gateway configuration
-│   │   ├── controller/         # API route handlers
-│   │   ├── customLogging/      # Structured logging configuration
-│   │   ├── database/           # Database connection and session
-│   │   ├── dataLoading/        # File loading (xlsx, csv)
-│   │   ├── dataProcessing/     # Data transformation and normalization
-│   │   ├── exceptions/         # Custom exceptions and handlers
-│   │   ├── middleware/         # Security headers, audit, request logging
+├── backend/
+│   ├── app/
+│   │   ├── auth/               # JWT, bcrypt, auth dependencies
+│   │   ├── config/             # App settings, gateway helpers
+│   │   ├── controller/         # API route handlers (11 routers)
+│   │   ├── customLogging/      # Structured logging, request tracing
+│   │   ├── database/           # SQLAlchemy engine and session
+│   │   ├── dataLoading/        # xlsx/csv file reader
+│   │   ├── dataProcessing/     # File normalization and transformation
+│   │   ├── exceptions/         # Custom exception hierarchy + handlers
+│   │   ├── middleware/         # Security headers, audit log, rate limiting
 │   │   ├── pydanticModels/     # Request/response schemas
 │   │   ├── reconciler/         # Core reconciliation engine
-│   │   ├── reports/            # Report generation (Excel/CSV)
-│   │   ├── services/           # Email service
+│   │   ├── reports/            # Excel/CSV report generation
+│   │   ├── services/           # Async email service
 │   │   ├── sqlModels/          # SQLAlchemy ORM models
-│   │   ├── storage/            # File storage backends (local, GCS)
-│   │   ├── templates/          # Jinja2 email templates
-│   │   ├── upload/             # File upload handling
-│   │   └── main.py             # FastAPI application entry point
+│   │   ├── storage/            # Pluggable storage (local/GCS)
+│   │   ├── templates/email/    # Jinja2 email templates
+│   │   ├── upload/             # File upload + template generation
+│   │   └── main.py             # App entry, middleware, router registration
 │   ├── alembic/                # Database migrations
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   └── .env.example            # Environment variable reference
-├── frontend/                   # React + TypeScript frontend
+│   └── .env.example
+├── frontend/
 │   └── src/
-│       ├── api/                # API client modules
-│       ├── components/         # Reusable UI components
-│       ├── features/           # Feature pages
-│       ├── stores/             # Zustand state management
-│       └── types/              # TypeScript type definitions
-├── docs/                       # Documentation
+│       ├── api/                # Axios client + endpoint modules
+│       ├── components/         # Reusable UI + layout components
+│       ├── features/           # Feature pages (auth, dashboard, reconcile, etc.)
+│       ├── hooks/              # useToast and other custom hooks
+│       ├── lib/                # Utility functions
+│       ├── stores/             # Zustand auth store
+│       └── types/              # TypeScript interfaces
+├── docs/
+│   ├── backend.md              # Detailed backend documentation
+│   └── frontend.md             # Detailed frontend documentation
 ├── docker-compose.yml
 └── .gitignore
 ```
@@ -110,191 +108,185 @@ A full-stack financial reconciliation platform built with FastAPI and React. Aut
 - MySQL 8.0+
 - Docker & Docker Compose (recommended)
 
-### Installation
+### Docker (Recommended)
 
-#### Using Docker (Recommended)
+```bash
+# 1. Clone the repository
+git clone <repository-url>
+cd recon
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd recon
-   ```
+# 2. Configure environment
+cp backend/.env.example backend/.env
+# Edit backend/.env — all variables are required
 
-2. **Configure environment variables**
-   ```bash
-   cp backend/.env.example backend/.env
-   # Edit backend/.env with your configuration (all variables are required)
-   ```
+# 3. Start all services
+docker-compose up --build
 
-3. **Start the services**
-   ```bash
-   docker-compose up --build
-   ```
+# 4. Run database migrations (first time only)
+docker exec -it fastapi_application alembic upgrade head
 
-4. **Run database migrations**
-   ```bash
-   docker exec -it fastapi_application alembic upgrade head
-   ```
+# 5. Create the first super admin
+curl -X POST http://localhost:8000/api/v1/users/create-super-admin \
+  -H "Content-Type: application/json" \
+  -d '{
+    "first_name": "Admin",
+    "last_name": "User",
+    "email": "admin@example.com",
+    "password": "YourSecurePassword1!",
+    "secret_key": "<SUPER_ADMIN_SECRET from .env>"
+  }'
+```
 
-5. **Create the first super admin**
-   ```bash
-   curl -X POST http://localhost:8000/api/v1/users/create-super-admin \
-     -H "Content-Type: application/json" \
-     -d '{
-       "first_name": "Admin",
-       "last_name": "User",
-       "email": "admin@example.com",
-       "password": "YourSecurePassword1!",
-       "secret_key": "<your SUPER_ADMIN_SECRET from .env>"
-     }'
-   ```
+Access:
+- **Frontend**: http://localhost:3000
+- **API**: http://localhost:8000
+- **API Docs** (dev only): http://localhost:8000/docs
 
-6. **Access the application**
-   - API: http://localhost:8000
-   - API Docs: http://localhost:8000/docs (development only)
-   - Frontend: http://localhost:3000
+### Manual Installation
 
-#### Manual Installation
+**Backend:**
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate      # Linux/Mac
+pip install -r requirements.txt
+cp .env.example .env          # Edit all values
+alembic upgrade head
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
 
-1. **Backend Setup**
-   ```bash
-   cd backend
+**Frontend:**
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-   # Create virtual environment
-   python -m venv venv
-   source venv/bin/activate  # Linux/Mac
+## Configuration
 
-   # Install dependencies
-   pip install -r requirements.txt
+All environment variables are **required** and must be set in `backend/.env`. The app fails to start if any are missing.
 
-   # Configure environment
-   cp .env.example .env
-   # Edit .env with your configuration
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `mysql+pymysql://user:pass@localhost:3306/recon` | MySQL connection string |
+| `JWT_SECRET_KEY` | `openssl rand -hex 32` | JWT signing key (32+ chars) |
+| `ENVIRONMENT` | `production` | `development`, `staging`, or `production` |
+| `STORAGE_BACKEND` | `local` | `local` or `gcs` |
+| `GCS_BUCKET_NAME` | `my-bucket` | Required when `STORAGE_BACKEND=gcs` |
+| `SMTP_HOST` | `smtp.gmail.com` | SMTP server hostname |
+| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_USERNAME` | `noreply@example.com` | SMTP login |
+| `SMTP_PASSWORD` | — | SMTP password |
+| `SMTP_FROM_EMAIL` | `noreply@example.com` | From address on emails |
+| `CORS_ORIGINS` | `http://localhost:3000` | Allowed frontend origins |
+| `SUPER_ADMIN_SECRET` | random string | Protects super admin bootstrap endpoint |
+| `TZ` | `Africa/Nairobi` | System timezone |
+| `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `LOG_FORMAT` | `json` | `json` or `text` |
 
-   # Run database migrations
-   alembic upgrade head
+See `backend/.env.example` for the full list with descriptions.
 
-   # Start the server
-   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-   ```
+## Reconciliation Workflow
 
-2. **Frontend Setup**
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+```
+1. Upload Files
+   ├── External (bank statement)
+   └── Internal (Workpay records)
 
-### Configuration
+2. Preview (Dry Run)
+   ├── Auto-classify rows: deposit, charge, debit, payout
+   ├── Include carry-forward unreconciled items from database
+   └── Match external debits ↔ internal payouts by composite key
 
-All environment variables are **required** and must be set in `backend/.env`. The application will fail to start if any are missing.
+3. Save
+   ├── Persist all transactions (matched + unmatched) to database
+   └── Create ReconciliationRun record (RUN-YYYYMMDD-HHMMSS-{uuid8})
 
-Copy `backend/.env.example` to `backend/.env` and configure all values. Key variables:
+4. Review
+   ├── Manual reconciliation for exceptions (maker submits, admin approves)
+   └── Download report (XLSX: 6 sheets, or CSV: flat file)
+```
 
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | MySQL connection string (`mysql+pymysql://user:pass@host:port/db`) |
-| `JWT_SECRET_KEY` | Secret for JWT signing (min 32 chars, generate with `openssl rand -hex 32`) |
-| `ENVIRONMENT` | `development`, `staging`, or `production` |
-| `STORAGE_BACKEND` | `local` or `gcs` |
-| `SMTP_HOST` / `SMTP_PASSWORD` | Email server credentials |
-| `TZ` | Timezone (`Africa/Nairobi`) |
+### Reconciliation Key
 
-See `backend/.env.example` for the complete list with documentation.
+For reconcilable transactions (debits ↔ payouts):
+```
+{reference}|{amount}|{base_gateway}
+```
 
-## Authentication
-
-### Login Flow
-
-User submits email + password → Server validates credentials → Issues JWT access + refresh tokens.
-
-### Security Features
-
-- **Account Lockout**: After 5 failed login attempts, account locks for 15 minutes
-- **Concurrent Session Prevention**: Only one active session per user; new login invalidates previous session
-- **Password Policy**: Configurable minimum length, uppercase, lowercase, digit, and special character requirements
-- **Password Expiry**: Passwords expire after 90 days (configurable)
-- **Password History**: Prevents reuse of last 5 passwords (configurable)
-- **Rate Limiting**: Login (5/min), forgot password (3/min)
-
-### User Roles
-
-| Role | Description | Capabilities |
-|------|-------------|--------------|
-| `super_admin` | System Administrator | Create/manage user accounts, assign roles |
-| `admin` | Approver/Checker | Approve/reject manual reconciliations, gateway changes |
-| `user` | Inputter/Maker | Upload files, run reconciliation, initiate actions |
-
-## Usage
-
-### Reconciliation Workflow
-
-1. **Upload Files**: Upload external (bank) and internal (system) transaction files for a gateway
-2. **Preview**: Dry-run reconciliation with carry-forward of previously unreconciled items
-3. **Save**: Confirm and save results — auto-creates a ReconciliationRun
-4. **Review Results**: Handle unmatched transactions manually if needed
-5. **Generate Reports**: Export reconciliation results
+For auto-reconciled transactions (charges, deposits — date included to prevent cross-run duplicates):
+```
+{reference}|{amount}|{base_gateway}|{YYYYMMDD}
+```
 
 ### File Format
 
-Upload files must contain these columns:
+Upload files (template mode) must contain these columns:
 
-| Column | Description | Required |
-|--------|-------------|----------|
-| Date | Transaction date (YYYY-MM-DD) | Yes |
-| Reference | Unique transaction identifier | Yes |
-| Details | Transaction description | Yes |
-| Debit | Debit amount | No |
-| Credit | Credit amount | No |
+| Column | Required | Description |
+|--------|----------|-------------|
+| Date | Yes | Transaction date (`YYYY-MM-DD`) |
+| Reference | Yes | Unique transaction identifier |
+| Details | Yes | Transaction narration |
+| Debit | No | Debit amount (number) |
+| Credit | No | Credit amount (number) |
 
-Download a template from the upload page to ensure correct formatting.
+Download a pre-formatted template from the Reconcile page. For raw bank statements, use **Upload Raw Statement** mode — the system maps columns automatically using the gateway configuration.
 
-## API Documentation
+## API Overview
 
-Interactive API documentation is available at (development only):
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+Interactive docs available at http://localhost:8000/docs (development only).
 
-### Key Endpoints
-
-| Group | Method | Endpoint | Description |
-|-------|--------|----------|-------------|
-| Auth | POST | `/api/v1/auth/login` | Verify credentials, get tokens |
-| Auth | POST | `/api/v1/auth/forgot-password` | Request password reset |
-| Upload | POST | `/api/v1/upload/file` | Upload transaction file |
-| Reconcile | POST | `/api/v1/reconcile` | Run reconciliation |
-| Reports | GET | `/api/v1/reports/download` | Download report |
-| Users | POST | `/api/v1/users` | Create user (super admin only) |
-| Gateways | GET | `/api/v1/gateway-config` | List gateway configurations |
+| Group | Prefix | Description |
+|-------|--------|-------------|
+| Auth | `/api/v1/auth` | Login, logout, token refresh, password management |
+| Users | `/api/v1/users` | User CRUD (super_admin only) |
+| Gateways | `/api/v1/gateway-config` | Gateway config + maker-checker workflow |
+| Upload | `/api/v1/upload` | File upload, download, delete, template |
+| Reconcile | `/api/v1/reconcile` | Preview and execute reconciliation |
+| Operations | `/api/v1/operations` | Manual reconciliation + admin authorization |
+| Reports | `/api/v1/reports` | Report download (XLSX / CSV) |
+| Runs | `/api/v1/runs` | Reconciliation run history |
+| Transactions | `/api/v1/transactions` | Transaction browsing and filtering |
+| Dashboard | `/api/v1/dashboard` | Aggregate statistics |
 
 ## Database Migrations
 
 ```bash
 cd backend
 
-# Run pending migrations
+# Apply all pending migrations
 alembic upgrade head
 
-# Create new migration
-alembic revision --autogenerate -m "description"
+# Create a new migration (auto-detect model changes)
+alembic revision --autogenerate -m "short description"
 
-# View migration history
-alembic history
+# View history
+alembic history --verbose
 
-# Rollback one revision
+# Rollback one step
 alembic downgrade -1
+
+# Check current revision
+alembic current
 ```
 
 ## Security
 
-- All environment variables are required from `backend/.env` — no hardcoded defaults
-- JWT secrets must be strong (32+ characters)
-- API docs (Swagger/ReDoc) are disabled in production
-- Security headers: CSP, X-Frame-Options, X-Content-Type-Options, HSTS (HTTPS)
-- Rate limiting on all authentication endpoints
-- Audit logging for sensitive operations (user management, password changes, reconciliation)
-- Email notifications for account lockout and password changes
-- All emails sent as background tasks (non-blocking)
+- All environment variables are required — no hardcoded defaults
+- JWT secrets must be 32+ characters (`openssl rand -hex 32`)
+- API docs (Swagger/ReDoc) are disabled in production (`ENVIRONMENT=production`)
+- Security headers on every response: CSP, HSTS, X-Frame-Options, X-Content-Type-Options
+- Rate limiting: login (5/min), forgot-password (3/min), uploads (30/min)
+- Audit log records every state-changing API call (user, IP, timestamp, response status)
+- Sensitive fields (passwords, tokens, secrets) masked in all log output
+- File uploads validated for extension before storage; archive copy saved before overwrite
+- Single active session per user — new login invalidates previous session
+
+## Documentation
+
+- [Backend Documentation](docs/backend.md) — Architecture, controllers, reconciliation engine, models, storage, configuration
+- [Frontend Documentation](docs/frontend.md) — Components, routing, state management, API modules, role-based access
 
 ## License
 

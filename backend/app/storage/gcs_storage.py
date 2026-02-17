@@ -114,6 +114,16 @@ class GcsStorage(StorageBackend):
         except OSError:
             pass
 
+    def archive_file(self, gateway: str, filename: str, content: bytes) -> str:
+        """Save a file to the archive subdirectory in GCS."""
+        try:
+            gcs_path = f"{self.bucket}/{gateway}/archive/{filename}"
+            with self.fs.open(gcs_path, "wb") as f:
+                f.write(content)
+            return f"gs://{gcs_path}"
+        except Exception as e:
+            raise FileUploadException(f"Failed to archive file to GCS {filename}: {str(e)}")
+
     def delete_file(self, gateway: str, filename: str) -> bool:
         """Delete a file from GCS."""
         try:

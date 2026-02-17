@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, HTTPException, Path
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, and_
 from starlette.responses import JSONResponse
 
 from app.database.mysql_configs import get_database
@@ -50,7 +50,6 @@ async def list_runs(
         conditions.append(ReconciliationRun.created_at <= date_to + " 23:59:59")
 
     if conditions:
-        from sqlalchemy import and_
         query = query.where(and_(*conditions))
         count_query = count_query.where(and_(*conditions))
 

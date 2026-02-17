@@ -119,6 +119,25 @@ class StorageBackend(ABC):
         """
         pass
 
+    def archive_file(self, gateway: str, filename: str, content: bytes) -> str:
+        """
+        Save a file to the archive subdirectory within a gateway directory.
+
+        Archive path: {base_path}/{gateway}/archive/{filename}
+
+        This is a best-effort operation used for audit purposes. Implementations
+        should not raise if the archive write fails — callers handle that gracefully.
+
+        Args:
+            gateway: The gateway name for directory organization.
+            filename: Unique archive filename (should include timestamp + UUID).
+            content: File content as bytes.
+
+        Returns:
+            Path or URI where the archive file was saved.
+        """
+        raise NotImplementedError("archive_file() not implemented for this storage backend")
+
     def find_file_by_prefix(self, gateway: str, prefix: str) -> Optional[str]:
         """
         Find a file in the gateway directory that starts with the given prefix.

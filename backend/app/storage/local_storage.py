@@ -108,6 +108,19 @@ class LocalStorage(StorageBackend):
         except OSError as e:
             raise ReadFileException(f"Failed to open file {filename}: {str(e)}")
 
+    def archive_file(self, gateway: str, filename: str, content: bytes) -> str:
+        """Save a file to the archive subdirectory within a gateway directory."""
+        _validate_path_component(gateway, "gateway")
+        _validate_path_component(filename, "filename")
+        archive_path = (self._get_gateway_path(gateway) / "archive").resolve()
+        if not str(archive_path).startswith(str(self.base_path)):
+            raise ValueError("Path traversal detected in archive path")
+        archive_path.mkdir(parents=True, exist_ok=True)
+        file_path = (archive_path / filename).resolve()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        return str(file_path)
+
     def delete_file(self, gateway: str, filename: str) -> bool:
         """Delete a file from local storage."""
         file_path = self._get_file_path(gateway, filename)

@@ -132,11 +132,13 @@ async def download_report(
     - Date, Transaction Reference, Details, Debit, Credit
     - Reconciliation Status, Reconciliation Note, Reconciliation Key, Run ID
 
-    For Excel format, the report is split into multiple sheets:
-    - External (bank debits)
-    - Internal (payouts, refunds)
-    - Deposits (credits/deposits)
-    - Charges (bank charges)
+    For Excel format, the report is split into 6 sheets:
+    - Unreconciled External (unmatched bank debits)
+    - Unreconciled Internal (unmatched Workpay payouts)
+    - Reconciled External (matched bank debits)
+    - Reconciled Internal (matched Workpay payouts)
+    - Charges (bank charges, auto-reconciled)
+    - Deposits (credits/deposits, auto-reconciled)
     """
     # Validate format
     format_lower = format.lower().strip()

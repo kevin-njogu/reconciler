@@ -140,12 +140,12 @@ async def get_dashboard_stats(
         Transaction.authorization_status == AuthorizationStatus.PENDING.value
     ).scalar() or 0
 
-    # Charges total
-    charges = db.query(
+    # Total unreconciled items across all gateways (count + sum of amounts)
+    unreconciled = db.query(
         func.count(Transaction.id).label('count'),
         func.coalesce(func.sum(Transaction.debit), 0).label('amount'),
     ).filter(
-        Transaction.transaction_type == TransactionType.CHARGE.value,
+        Transaction.reconciliation_status == ReconciliationStatus.UNRECONCILED.value,
     ).first()
 
     # ======================================================================
@@ -156,7 +156,7 @@ async def get_dashboard_stats(
         "summary": {
             "reconciliation_rate": float(reconciliation_rate),
             "pending_authorizations": int(pending_auth or 0),
-            "charges_count": int(charges.count or 0),
-            "charges_amount": to_serializable(charges.amount),
+            "unreconciled_count": int(unreconciled.count or 0),
+            "unreconciled_amount": to_serializable(unreconciled.amount),
         },
     })
