@@ -35,7 +35,7 @@ steps:
       - --set-env-vars=TZ=Africa/Nairobi
 
 substitutions:
-  _REGION: africa-south1
+  _REGION: us-central1
   _REPO: recon
   _SERVICE: recon
 
