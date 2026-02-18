@@ -39,4 +39,5 @@ substitutions:
   _REPO: recon
   _SERVICE: recon
 
-logging: CLOUD_LOGGING_ONLY
+options:
+  logging: CLOUD_LOGGING_ONLY
