@@ -31,8 +31,8 @@ steps:
       - --memory=1Gi
       - --cpu=1
       - --min-instances=1
-      - --set-secrets=DATABASE_URL=DATABASE_URL:latest,JWT_SECRET_KEY=JWT_SECRET_KEY:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SUPER_ADMIN_SECRET=SUPER_ADMIN_SECRET:latest
-      - --set-env-vars=TZ=Africa/Nairobi,ENVIRONMENT=production,STORAGE_BACKEND=local,LOG_LEVEL=INFO,LOG_FORMAT=json,SMTP_HOST=smtp.gmail.com,SMTP_PORT=587,SMTP_USERNAME=kelvnjogu@gmail.com,SMTP_FROM_EMAIL=kelvnjogu@gmail.com,CORS_ORIGINS=https://recon-xxxx-uc.a.run.app
+      - --set-secrets=DATABASE_URL=DATABASE_URL:latest,JWT_SECRET_KEY=JWT_SECRET_KEY:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest
+      - --set-env-vars=TZ=Africa/Nairobi,ENVIRONMENT=production,STORAGE_BACKEND=local,LOG_LEVEL=INFO,LOG_FORMAT=json,SMTP_HOST=smtp.gmail.com,SMTP_PORT=587,SMTP_USERNAME=kelvnjogu@gmail.com,SMTP_FROM_EMAIL=kelvnjogu@gmail.com,CORS_ORIGINS=["https://recon-hb4v5mvtwq-uc.a.run.app"]
       - --add-cloudsql-instances=$PROJECT_ID:$_REGION:$_DB_INSTANCE
 
 substitutions:
