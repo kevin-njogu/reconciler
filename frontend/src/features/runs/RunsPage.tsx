@@ -27,7 +27,7 @@ import {
   Alert,
   Select,
 } from '@/components/ui';
-import { formatDateTime, cn } from '@/lib/utils';
+import { formatDateTime } from '@/lib/utils';
 
 const pageSizeOptions = [
   { value: '10', label: '10 per page' },
