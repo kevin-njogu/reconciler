@@ -30,8 +30,8 @@ class AuthSettings(BaseSettings):
     smtp_from_name: str = "Reconciler System"
     smtp_use_tls: bool = True
 
-    # Email Domain Restriction
-    allowed_email_domain: str = "gmail.com"
+    # Email Domain Restriction (comma-separated for multiple domains)
+    allowed_email_domain: str = "gmail.com,myworkpay.com"
 
     # Account Security
     max_failed_login_attempts: int = 5

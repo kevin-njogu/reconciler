@@ -187,11 +187,12 @@ class UserCreateRequest(BaseModel):
     @field_validator('email')
     @classmethod
     def validate_email_domain(cls, v: str) -> str:
-        domain = auth_settings.allowed_email_domain
-        if domain:
+        allowed = auth_settings.allowed_email_domain
+        if allowed:
+            domains = [d.strip().lower() for d in allowed.split(',')]
             email_domain = v.split('@')[1].lower()
-            if email_domain != domain.lower():
-                raise ValueError(f'Email must be from the {domain} domain')
+            if email_domain not in domains:
+                raise ValueError(f'Email must be from one of: {", ".join(domains)}')
         return v
 
     @field_validator('mobile_number')
