@@ -15,36 +15,36 @@ logger = logging.getLogger("app.auth.config")
 class AuthSettings(BaseSettings):
     """Authentication-related settings."""
 
-    # JWT Configuration
+    # JWT Configuration (secret key must come from env/secrets)
     jwt_secret_key: str
-    jwt_algorithm: str
-    access_token_expire_minutes: int
-    refresh_token_expire_hours: int
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_hours: int = 1
 
-    # SMTP Email Configuration
-    smtp_host: str
-    smtp_port: int
+    # SMTP Email Configuration (credentials must come from env/secrets)
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
     smtp_username: str
     smtp_password: str
     smtp_from_email: str
-    smtp_from_name: str
-    smtp_use_tls: bool
+    smtp_from_name: str = "Reconciler System"
+    smtp_use_tls: bool = True
 
     # Email Domain Restriction
-    allowed_email_domain: str
+    allowed_email_domain: str = "gmail.com"
 
     # Account Security
-    max_failed_login_attempts: int
-    account_lockout_minutes: int
-    password_expiry_days: int
-    password_history_count: int
+    max_failed_login_attempts: int = 5
+    account_lockout_minutes: int = 15
+    password_expiry_days: int = 90
+    password_history_count: int = 5
 
     # Password Policy
-    password_min_length: int
-    password_require_uppercase: bool
-    password_require_lowercase: bool
-    password_require_digit: bool
-    password_require_special: bool
+    password_min_length: int = 8
+    password_require_uppercase: bool = True
+    password_require_lowercase: bool = True
+    password_require_digit: bool = True
+    password_require_special: bool = True
 
     class Config:
         env_file = ".env"

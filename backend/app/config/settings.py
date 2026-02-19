@@ -18,21 +18,21 @@ class Settings(BaseSettings):
     """
 
     # Application
-    APP_NAME: str
-    APP_VERSION: str
-    DEBUG: bool
-    ENVIRONMENT: Literal["development", "staging", "production"]
+    APP_NAME: str = "Payment Gateway Reconciliation API"
+    APP_VERSION: str = "2.0.0"
+    DEBUG: bool = False
+    ENVIRONMENT: Literal["development", "staging", "production"] = "development"
 
     # Logging
-    LOG_LEVEL: str
-    LOG_FORMAT: Literal["text", "json"]
-    LOG_FILE_ENABLED: bool
-    LOG_FILE_PATH: str
-    LOG_FILE_MAX_BYTES: int
-    LOG_FILE_BACKUP_COUNT: int
-    LOG_SQL_QUERIES: bool
-    LOG_REQUEST_BODY: bool
-    LOG_RESPONSE_BODY: bool
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: Literal["text", "json"] = "json"
+    LOG_FILE_ENABLED: bool = False
+    LOG_FILE_PATH: str = "logs/app.log"
+    LOG_FILE_MAX_BYTES: int = 10485760
+    LOG_FILE_BACKUP_COUNT: int = 5
+    LOG_SQL_QUERIES: bool = False
+    LOG_REQUEST_BODY: bool = False
+    LOG_RESPONSE_BODY: bool = False
 
     # CORS
     CORS_ORIGINS: list[str]
@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
 
     # Storage
-    STORAGE_BACKEND: Literal["local", "gcs"]
+    STORAGE_BACKEND: Literal["local", "gcs"] = "local"
     LOCAL_UPLOADS_PATH: str = "uploads"
     GCS_BUCKET: str = ""
 

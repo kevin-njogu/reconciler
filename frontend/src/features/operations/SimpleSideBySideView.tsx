@@ -23,7 +23,7 @@ interface SimpleTransactionPanelProps {
   transactions: UnreconciledTransaction[];
   selectedIds: Set<number>;
   onToggleSelection: (id: number) => void;
-  onToggleAll: () => void;
+  onToggleAll: (transactions: UnreconciledTransaction[]) => void;
   onReconcileClick: (txn: UnreconciledTransaction) => void;
   variant: 'internal' | 'external';
 }
@@ -160,7 +160,7 @@ function SimpleTransactionPanel({
                   ref={(el) => {
                     if (el) el.indeterminate = someSelected && !allSelected;
                   }}
-                  onChange={onToggleAll}
+                  onChange={() => onToggleAll(paginatedTransactions)}
                   className="h-4 w-4 rounded border-gray-300 text-primary-500 focus:ring-primary-400"
                 />
               </TableHead>
@@ -339,7 +339,7 @@ export function SimpleSideBySideView({
         transactions={externalTransactions}
         selectedIds={selectedIds}
         onToggleSelection={onToggleSelection}
-        onToggleAll={() => onToggleAllExternal(externalTransactions)}
+        onToggleAll={(paginated) => onToggleAllExternal(paginated)}
         onReconcileClick={onReconcileClick}
         variant="external"
       />
@@ -348,7 +348,7 @@ export function SimpleSideBySideView({
         transactions={internalTransactions}
         selectedIds={selectedIds}
         onToggleSelection={onToggleSelection}
-        onToggleAll={() => onToggleAllInternal(internalTransactions)}
+        onToggleAll={(paginated) => onToggleAllInternal(paginated)}
         onReconcileClick={onReconcileClick}
         variant="internal"
       />

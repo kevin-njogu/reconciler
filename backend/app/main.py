@@ -51,7 +51,7 @@ from app.controller import (
 from app.sqlModels.runEntities import ReconciliationRun, UploadedFile  # noqa: F401
 from app.sqlModels.transactionEntities import Transaction  # noqa: F401
 from app.sqlModels.gatewayEntities import Gateway, GatewayFileConfig, GatewayChangeRequest  # noqa: F401
-from app.sqlModels.authEntities import User, RefreshToken, AuditLog  # noqa: F401
+from app.sqlModels.authEntities import User, RefreshToken, LoginSession, AuditLog  # noqa: F401
 
 logger = logging.getLogger("app")
 

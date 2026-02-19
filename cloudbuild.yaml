@@ -39,41 +39,7 @@ steps:
           SMTP_USERNAME=SMTP_USERNAME:latest,
           SMTP_FROM_EMAIL=SMTP_FROM_EMAIL:latest,
           CORS_ORIGINS=CORS_ORIGINS:latest
-      - >-
-          --set-env-vars=
-          APP_NAME=Payment Gateway Reconciliation API,
-          APP_VERSION=2.0.0,
-          DEBUG=false,
-          ENVIRONMENT=production,
-          TZ=Africa/Nairobi,
-          STORAGE_BACKEND=local,
-          LOCAL_UPLOADS_PATH=uploads,
-          LOG_LEVEL=INFO,
-          LOG_FORMAT=json,
-          LOG_FILE_ENABLED=false,
-          LOG_FILE_PATH=logs/app.log,
-          LOG_FILE_MAX_BYTES=10485760,
-          LOG_FILE_BACKUP_COUNT=5,
-          LOG_SQL_QUERIES=false,
-          LOG_REQUEST_BODY=false,
-          LOG_RESPONSE_BODY=false,
-          SMTP_HOST=smtp.gmail.com,
-          SMTP_PORT=587,
-          SMTP_FROM_NAME=Reconciler System,
-          SMTP_USE_TLS=true,
-          ALLOWED_EMAIL_DOMAIN=gmail.com,
-          MAX_FAILED_LOGIN_ATTEMPTS=5,
-          ACCOUNT_LOCKOUT_MINUTES=15,
-          PASSWORD_EXPIRY_DAYS=90,
-          PASSWORD_HISTORY_COUNT=5,
-          PASSWORD_MIN_LENGTH=8,
-          PASSWORD_REQUIRE_UPPERCASE=true,
-          PASSWORD_REQUIRE_LOWERCASE=true,
-          PASSWORD_REQUIRE_DIGIT=true,
-          PASSWORD_REQUIRE_SPECIAL=true,
-          JWT_ALGORITHM=HS256,
-          ACCESS_TOKEN_EXPIRE_MINUTES=30,
-          REFRESH_TOKEN_EXPIRE_HOURS=1
+      - --set-env-vars=ENVIRONMENT=production,TZ=Africa/Nairobi
       - --add-cloudsql-instances=$PROJECT_ID:$_REGION:$_DB_INSTANCE
 
 substitutions:
