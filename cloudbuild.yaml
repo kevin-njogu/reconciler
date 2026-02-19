@@ -31,7 +31,14 @@ steps:
       - --memory=1Gi
       - --cpu=1
       - --min-instances=1
-      - --set-secrets=DATABASE_URL=DATABASE_URL:latest,JWT_SECRET_KEY=JWT_SECRET_KEY:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest
+      - >-
+          --set-secrets=
+          DATABASE_URL=DATABASE_URL:latest,
+          JWT_SECRET_KEY=JWT_SECRET_KEY:latest,
+          SMTP_PASSWORD=SMTP_PASSWORD:latest,
+          SMTP_USERNAME=SMTP_USERNAME:latest,
+          SMTP_FROM_EMAIL=SMTP_FROM_EMAIL:latest,
+          CORS_ORIGINS=CORS_ORIGINS:latest
       - >-
           --set-env-vars=
           APP_NAME=Payment Gateway Reconciliation API,
@@ -52,8 +59,6 @@ steps:
           LOG_RESPONSE_BODY=false,
           SMTP_HOST=smtp.gmail.com,
           SMTP_PORT=587,
-          SMTP_USERNAME=kelvnjogu@gmail.com,
-          SMTP_FROM_EMAIL=kelvnjogu@gmail.com,
           SMTP_FROM_NAME=Reconciler System,
           SMTP_USE_TLS=true,
           ALLOWED_EMAIL_DOMAIN=gmail.com,
@@ -68,8 +73,7 @@ steps:
           PASSWORD_REQUIRE_SPECIAL=true,
           JWT_ALGORITHM=HS256,
           ACCESS_TOKEN_EXPIRE_MINUTES=30,
-          REFRESH_TOKEN_EXPIRE_HOURS=1,
-          CORS_ORIGINS=["https://recon-hb4v5mvtwq-uc.a.run.app"]
+          REFRESH_TOKEN_EXPIRE_HOURS=1
       - --add-cloudsql-instances=$PROJECT_ID:$_REGION:$_DB_INSTANCE
 
 substitutions:
