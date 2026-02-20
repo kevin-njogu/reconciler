@@ -10,7 +10,7 @@ A full-stack financial reconciliation platform built with FastAPI and React. Aut
 - **Auto-Classification** — Credits auto-reconciled as deposits; charge-keyword debits auto-reconciled as charges
 - **Maker-Checker Workflow** — Role-based separation of duties for reconciliation and gateway configuration
 - **Manual Reconciliation** — Users can manually reconcile exceptions; admins approve or reject
-- **Report Generation** — Export 6-sheet XLSX or flat CSV reports per gateway with date/run filters
+- **Report Generation** — Export 8-sheet XLSX or flat CSV reports per gateway with date/run filters
 - **Real-time Dashboard** — Per-gateway match rates, unreconciled counts, and pending approvals
 - **Pluggable Storage** — Local filesystem or Google Cloud Storage for uploaded files
 - **File Archiving** — Every upload creates an immutable audit copy before overwriting
@@ -30,7 +30,7 @@ A full-stack financial reconciliation platform built with FastAPI and React. Aut
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS |
 | State | Zustand (auth), TanStack React Query (server state) |
 | Storage | Local filesystem or Google Cloud Storage |
-| Deployment | Docker, Docker Compose |
+| Deployment | Google Cloud Run, Cloud Build, Cloud SQL |
 
 ## Architecture
 
@@ -80,7 +80,6 @@ A full-stack financial reconciliation platform built with FastAPI and React. Aut
 │   │   ├── upload/             # File upload + template generation
 │   │   └── main.py             # App entry, middleware, router registration
 │   ├── alembic/                # Database migrations
-│   ├── Dockerfile
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -94,8 +93,13 @@ A full-stack financial reconciliation platform built with FastAPI and React. Aut
 │       └── types/              # TypeScript interfaces
 ├── docs/
 │   ├── backend.md              # Detailed backend documentation
-│   └── frontend.md             # Detailed frontend documentation
-├── docker-compose.yml
+│   ├── frontend.md             # Detailed frontend documentation
+│   └── deployment.md           # GCP deployment guide
+├── Dockerfile                  # Multi-stage build (frontend + backend)
+├── nginx.conf                  # Reverse proxy configuration
+├── supervisord.conf            # Process manager configuration
+├── cloudbuild.yaml             # CI/CD pipeline
+├── docker-compose.yml          # Local development
 └── .gitignore
 ```
 
@@ -179,7 +183,6 @@ All environment variables are **required** and must be set in `backend/.env`. Th
 | `SMTP_PASSWORD` | — | SMTP password |
 | `SMTP_FROM_EMAIL` | `noreply@example.com` | From address on emails |
 | `CORS_ORIGINS` | `http://localhost:3000` | Allowed frontend origins |
-| `SUPER_ADMIN_SECRET` | random string | Protects super admin bootstrap endpoint |
 | `TZ` | `Africa/Nairobi` | System timezone |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `LOG_FORMAT` | `json` | `json` or `text` |
@@ -204,7 +207,7 @@ See `backend/.env.example` for the full list with descriptions.
 
 4. Review
    ├── Manual reconciliation for exceptions (maker submits, admin approves)
-   └── Download report (XLSX: 6 sheets, or CSV: flat file)
+   └── Download report (XLSX: 8 sheets, or CSV: flat file)
 ```
 
 ### Reconciliation Key
@@ -273,7 +276,7 @@ alembic current
 
 ## Security
 
-- All environment variables are required — no hardcoded defaults
+- Sensible defaults for non-sensitive config; secrets managed via GCP Secret Manager
 - JWT secrets must be 32+ characters (`openssl rand -hex 32`)
 - API docs (Swagger/ReDoc) are disabled in production (`ENVIRONMENT=production`)
 - Security headers on every response: CSP, HSTS, X-Frame-Options, X-Content-Type-Options
@@ -287,6 +290,7 @@ alembic current
 
 - [Backend Documentation](docs/backend.md) — Architecture, controllers, reconciliation engine, models, storage, configuration
 - [Frontend Documentation](docs/frontend.md) — Components, routing, state management, API modules, role-based access
+- [Deployment Guide](docs/deployment.md) — Step-by-step GCP deployment with Cloud Run, Cloud SQL, Secret Manager, and Cloud Build
 
 ## License
 

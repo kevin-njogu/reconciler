@@ -19,6 +19,8 @@ Excel Format Sheets:
 - Unreconciled Internal: Unmatched internal (Workpay) payouts
 - Reconciled External: Matched external (bank) debits
 - Reconciled Internal: Matched internal (Workpay) payouts
+- Manual External: Manually reconciled external transactions
+- Manual Internal: Manually reconciled internal transactions
 - Charges: Bank charges (auto-reconciled)
 - Deposits: Credit/deposit transactions (auto-reconciled)
 """
@@ -209,11 +211,13 @@ def download_gateway_report_filtered(
             }
         )
     else:
-        # Multi-sheet Excel report: 6 sheets split by side and reconciliation status
+        # Multi-sheet Excel report: 8 sheets split by side, reconciliation status, and manual
         unreconciled_external = []
         unreconciled_internal = []
         reconciled_external = []
         reconciled_internal = []
+        manual_external = []
+        manual_internal = []
         charges = []
         deposits = []
 
@@ -221,6 +225,7 @@ def download_gateway_report_filtered(
             gateway_name = txn.gateway or ""
             txn_type = txn.transaction_type or ""
             recon_status = txn.reconciliation_status or ""
+            is_manual = txn.is_manually_reconciled == "true"
 
             is_internal = (
                 gateway_name.endswith("_internal") or
@@ -232,6 +237,11 @@ def download_gateway_report_filtered(
                 charges.append(txn)
             elif txn_type == TransactionType.DEPOSIT.value:
                 deposits.append(txn)
+            elif is_manual:
+                if is_internal:
+                    manual_internal.append(txn)
+                else:
+                    manual_external.append(txn)
             elif is_internal:
                 if is_reconciled:
                     reconciled_internal.append(txn)
@@ -249,15 +259,19 @@ def download_gateway_report_filtered(
             f"Unreconciled Internal={len(unreconciled_internal)}, "
             f"Reconciled External={len(reconciled_external)}, "
             f"Reconciled Internal={len(reconciled_internal)}, "
+            f"Manual External={len(manual_external)}, "
+            f"Manual Internal={len(manual_internal)}, "
             f"Charges={len(charges)}, Deposits={len(deposits)}"
         )
 
-        # Always create all 6 sheets (empty DataFrame if no data for that category)
+        # Always create all 8 sheets (empty DataFrame if no data for that category)
         dataframes = {
             "Unreconciled External": transactions_to_report_dataframe(unreconciled_external),
             "Unreconciled Internal": transactions_to_report_dataframe(unreconciled_internal),
             "Reconciled External": transactions_to_report_dataframe(reconciled_external),
             "Reconciled Internal": transactions_to_report_dataframe(reconciled_internal),
+            "Manual External": transactions_to_report_dataframe(manual_external),
+            "Manual Internal": transactions_to_report_dataframe(manual_internal),
             "Charges": transactions_to_report_dataframe(charges),
             "Deposits": transactions_to_report_dataframe(deposits),
         }
