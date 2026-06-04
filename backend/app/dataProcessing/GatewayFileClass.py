@@ -9,6 +9,7 @@ import logging
 from datetime import date
 from decimal import Decimal
 from typing import Optional, List
+import math
 
 import pandas as pd
 
@@ -315,9 +316,12 @@ class GatewayFile:
         # Handle numeric references that might have decimals
         try:
             ref_float = float(ref_str)
+            if math.isinf(ref_float):
+                return "INFINITY-REF"
             return str(int(ref_float))
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             return ref_str
+            # return str(ref_str).strip()     
 
     @staticmethod
     def clean_amount_for_key(amount) -> str:
